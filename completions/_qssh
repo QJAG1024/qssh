@@ -1,0 +1,18 @@
+#compdef qssh
+_qssh() {
+  local -a profiles
+  profiles=()
+  _arguments \
+    "--add[Create a new profile]:name:" \
+    "--edit[Edit an existing profile]:name:()" \
+    "--delete[Delete a profile]:name:()" \
+    "--list[List profiles]:filter:()" \
+    "--version[Print version]" \
+    "*: :->profile"
+  case $state in
+    profile)
+      _describe profiles profiles
+      ;;
+  esac
+}
+_qssh "$@"
