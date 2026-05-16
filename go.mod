@@ -7,4 +7,9 @@ require (
 	golang.org/x/term v0.43.0
 )
 
-require golang.org/x/sys v0.44.0 // indirect
+require (
+	github.com/kr/fs v0.1.0 // indirect
+	github.com/pkg/sftp v1.13.10 // indirect
+	golang.org/x/net v0.54.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
+)
