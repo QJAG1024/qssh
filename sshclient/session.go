@@ -226,6 +226,11 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 	return err
 }
 
+// Client returns the underlying SSH client, for use by SFTP etc.
+func (s *Session) Client() *ssh.Client {
+	return s.client
+}
+
 // Close terminates the SSH connection.
 func (s *Session) Close() error {
 	if s.sshSession != nil {
