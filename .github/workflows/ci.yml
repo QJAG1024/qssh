@@ -28,8 +28,8 @@ jobs:
       - run: go vet ./...
       - run: go test -count=1 ./...
 
-  # ── Release — only on tags ──
-  release:
+  # ── Release: build binaries (matrix) ──
+  build-release:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [check]
     runs-on: ubuntu-latest
@@ -64,8 +64,24 @@ jobs:
           CGO_ENABLED=0 \
           go build -ldflags="-s -w -X 'main.version=$(git describe --tags --always)'" -o qssh_${{ matrix.os }}_${{ matrix.arch }}${{ matrix.suffix }} .
 
-      - name: Upload Release Asset
-        uses: softprops/action-gh-release@v2
+      - uses: actions/upload-artifact@v4
         with:
-          files: qssh_${{ matrix.os }}_${{ matrix.arch }}${{ matrix.suffix }}
+          name: qssh_${{ matrix.os }}_${{ matrix.arch }}
+          path: qssh_${{ matrix.os }}_${{ matrix.arch }}${{ matrix.suffix }}
+
+  # ── Release: create release + upload all assets (single run) ──
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - run: ls -R artifacts/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
           generate_release_notes: true
