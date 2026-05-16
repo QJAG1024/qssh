@@ -2,15 +2,19 @@ package mount
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/net/webdav"
@@ -20,143 +24,365 @@ import (
 	"qssh/store"
 )
 
-// Mount connects to the profile, starts a WebDAV server, and mounts it
-// via the system's WebDAV client. Blocks until interrupted.
-func Mount(p store.Profile, mountPoint string) error {
-	internal.RenderProfileHeader(p.Name, p.User, p.Host, p.Port)
+// --- State file ---
 
-	session, err := sshclient.Dial(p, internal.RenderProgress)
+type mountEntry struct {
+	Port   int    `json:"port"`
+	PID    int    `json:"pid"`
+	DavURL string `json:"dav_url"`
+	Status string `json:"status"` // "starting", "ready", "failed"
+}
+
+func statePath() string {
+	configDir, err := os.UserConfigDir()
 	if err != nil {
-		return err
+		configDir = filepath.Join(os.Getenv("HOME"), ".config")
+	}
+	return filepath.Join(configDir, "qssh", "mounts.json")
+}
+
+var stateMu sync.Mutex
+
+func loadState() map[string]mountEntry {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	data, err := os.ReadFile(statePath())
+	if err != nil {
+		return map[string]mountEntry{}
+	}
+	var m map[string]mountEntry
+	json.Unmarshal(data, &m)
+	if m == nil {
+		m = map[string]mountEntry{}
+	}
+	return m
+}
+
+func saveState(m map[string]mountEntry) {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	data, _ := json.MarshalIndent(m, "", "  ")
+	os.WriteFile(statePath(), data, 0600)
+}
+
+// --- Mount (launcher, foreground) ---
+
+// Mount forks a daemon to serve WebDAV and exits immediately.
+func Mount(name, mountPoint string) error {
+	state := loadState()
+	if _, exists := state[name]; exists {
+		return fmt.Errorf("profile %q is already mounted", name)
+	}
+
+	// Pick a random port.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return fmt.Errorf("pick port: %w", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+
+	// Write initial state before forking.
+	davURL := fmt.Sprintf("dav://127.0.0.1:%d", port)
+	state[name] = mountEntry{
+		Port:   port,
+		DavURL: davURL,
+		Status: "starting",
+	}
+	saveState(state)
+
+	// Fork daemon — re-exec self with hidden flag.
+	cmd := exec.Command(os.Args[0], "--mount-daemon", name, "--port", fmt.Sprintf("%d", port))
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Stderr = nil // detach stderr
+	cmd.Stdout = nil
+	cmd.Stdin = nil
+	if err := cmd.Start(); err != nil {
+		// Clean up state on fork failure.
+		delete(state, name)
+		saveState(state)
+		return fmt.Errorf("fork daemon: %w", err)
+	}
+
+	// Wait for daemon to reach "ready" (up to 5s).
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		st := loadState()
+		entry, ok := st[name]
+		if !ok {
+			break // cleaned up — daemon likely failed
+		}
+		switch entry.Status {
+		case "ready":
+			display := davURL
+			if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+				display = fmt.Sprintf("http://127.0.0.1:%d", entry.Port)
+			}
+			fmt.Printf("Mounted: %s\n", display)
+			return nil
+		case "failed":
+			return fmt.Errorf("daemon failed")
+		}
+	}
+	return fmt.Errorf("daemon did not become ready in time")
+}
+
+// --- MountDaemon (background worker) ---
+
+// MountDaemon is the hidden entry point for the mount worker process.
+// It is called via --mount-daemon after forking.
+func MountDaemon(profileName, portStr string) {
+	port := 0
+	fmt.Sscanf(portStr, "%d", &port)
+	if port == 0 {
+		os.Exit(1)
+	}
+
+	openStore, err := openStoreFn()
+	if err != nil {
+		setFailed(profileName)
+		os.Exit(1)
+	}
+
+	p, exists := openStore.Get(profileName)
+	if !exists {
+		setFailed(profileName)
+		os.Exit(1)
+	}
+
+	// Dial SSH.
+	session, err := sshclient.Dial(p, internal.NopProgress)
+	if err != nil {
+		setFailed(profileName)
+		os.Exit(1)
 	}
 	defer session.Close()
 
-	// Create SFTP client from the existing SSH connection.
-	internal.RenderProgress(internal.StepResult{
-		ID: internal.StepAllocatePTY, Status: internal.StepRunning,
-		Message: "Starting SFTP session",
-	})
+	// SFTP client.
 	sfClient, err := sftp.NewClient(session.Client())
 	if err != nil {
-		internal.RenderProgress(internal.StepResult{
-			ID: internal.StepAllocatePTY, Status: internal.StepFailed,
-			Message: fmt.Sprintf("SFTP failed: %v", err),
-		})
-		return fmt.Errorf("sftp client: %w", err)
+		setFailed(profileName)
+		os.Exit(1)
 	}
 	defer sfClient.Close()
-	internal.RenderProgress(internal.StepResult{
-		ID: internal.StepAllocatePTY, Status: internal.StepDone,
-		Message: "SFTP session established",
-	})
 
-	// Start WebDAV server on a random port.
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	// Start WebDAV server.
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
-		return fmt.Errorf("webdav listen: %w", err)
+		setFailed(profileName)
+		os.Exit(1)
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
 
 	fs := &sftpFS{client: sfClient}
 	handler := &webdav.Handler{
 		FileSystem: fs,
 		LockSystem: webdav.NewMemLS(),
 	}
-
 	httpServer := &http.Server{Handler: handler}
 	go httpServer.Serve(listener)
 
+	// Platform-specific mount.
+	// Linux (GVFS) uses dav:// scheme; macOS/Windows use http://.
 	davURL := fmt.Sprintf("dav://127.0.0.1:%d", port)
-	fmt.Fprintf(os.Stderr, "\n  WebDAV: %s\n", davURL)
-
-	// Mount using platform-specific WebDAV client.
+	httpURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	mounted := false
 	switch runtime.GOOS {
 	case "linux":
-		mounted = gvfsMount(davURL)
+		mounted = linuxMount(davURL)
 	case "darwin":
-		mounted = macMount()
+		mounted = macMount(httpURL)
 	case "windows":
-		mounted = winMount(port, mountPoint)
+		mounted = winMount(port, "")
 	}
 
-	if mounted {
-		fmt.Fprintf(os.Stderr, "  Mounted. Press Ctrl+C to unmount.\n")
-	} else {
-		fmt.Fprintf(os.Stderr, "  Open in file manager: %s\n", davURL)
-		if runtime.GOOS == "linux" {
-			fmt.Fprintf(os.Stderr, "  Tip: install gvfs for auto-mount (sudo pacman -S gvfs)\n")
-			fmt.Fprintf(os.Stderr, "  Or: gio mount %s\n", davURL)
-		}
-		fmt.Fprintf(os.Stderr, "  Press Ctrl+C to stop.\n")
-	}
+	// Mark ready.
+	markReady(profileName, port, davURL, os.Getpid())
 
-	// Wait for interrupt.
+	// Handle SIGTERM for graceful shutdown.
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		<-sigCh
+		if mounted {
+			cleanupMount(profileName, davURL)
+		}
+		httpServer.Shutdown(context.Background())
+		os.Exit(0)
+	}()
 
-	fmt.Fprintf(os.Stderr, "\n  Cleaning up...\n")
-	if mounted {
-		gvfsUnmount(davURL)
+	// Block forever (HTTP server runs in goroutine).
+	select {}
+}
+
+// --- Unmount ---
+
+// Unmount stops a mount by profile name.
+func Unmount(name string) error {
+	state := loadState()
+	entry, exists := state[name]
+	if !exists {
+		return fmt.Errorf("profile %q is not mounted", name)
 	}
-	httpServer.Shutdown(context.Background())
+
+	// Unmount first, then kill.
+	cleanupMount(name, entry.DavURL)
+
+	// Kill daemon.
+	proc, err := os.FindProcess(entry.PID)
+	if err == nil {
+		proc.Signal(syscall.SIGTERM)
+		// Give it a moment, then force kill.
+		time.Sleep(200 * time.Millisecond)
+		proc.Kill()
+	}
+
+	delete(state, name)
+	saveState(state)
 	return nil
 }
 
-// Unmount unmounts a WebDAV mount by URL or path.
-func Unmount(target string) error {
+// --- Internal helpers ---
+
+func cleanupMount(name, davURL string) {
 	switch runtime.GOOS {
 	case "linux":
-		// Accept either dav:// URL or gvfs mount path.
-		if strings.HasPrefix(target, "dav://") || strings.HasPrefix(target, "/") {
-			return gvfsUnmount(target)
-		}
-		return gvfsUnmount("dav://" + target)
+		linuxUnmount(davURL)
 	case "darwin":
-		return run("umount", target)
+		// Mac user unmounts via Finder.
 	case "windows":
-		return run("net", "use", target, "/delete")
-	default:
-		return fmt.Errorf("unmount not supported on %s", runtime.GOOS)
+		// net use /delete handled by daemon's cleanup.
 	}
+}
+
+func markReady(name string, port int, davURL string, pid int) {
+	state := loadState()
+	state[name] = mountEntry{
+		Port:   port,
+		PID:    pid,
+		DavURL: davURL,
+		Status: "ready",
+	}
+	saveState(state)
+}
+
+func setFailed(name string) {
+	state := loadState()
+	delete(state, name)
+	saveState(state)
+}
+
+// openStoreFn is a package-level hook so the daemon can open the store
+// without importing the cmd package (would create a cycle).
+// Set once at startup.
+var openStoreFn func() (*store.Store, error) = nil
+
+// SetOpenStore provides the store-opener function from cmd package.
+func SetOpenStore(fn func() (*store.Store, error)) {
+	openStoreFn = fn
 }
 
 // --- Platform mount helpers ---
 
-func gvfsMount(davURL string) bool {
-	name := "gio"
-	if _, err := exec.LookPath(name); err != nil {
-		// fallback to deprecated gvfs-mount
-		name = "gvfs-mount"
-		if _, err := exec.LookPath(name); err != nil {
-			return false
+// backendCmd describes a WebDAV mount/unmount tool.
+type backendCmd struct {
+	Name       string
+	MountArg   string // arg after "mount" subcommand, or "" if no subcommand
+	UnmountArg string
+}
+
+// linuxBackends returns the ordered list of backends to try, based on
+// XDG_CURRENT_DESKTOP and the mount.backend config override.
+func linuxBackends() []backendCmd {
+	// Config override.
+	cfg := internal.OpenConfig(internal.DefaultConfigPath())
+	switch cfg.Get("mount.backend") {
+	case "gio":
+		return []backendCmd{
+			{Name: "gio", MountArg: "mount", UnmountArg: "-u"},
 		}
-		return exec.Command(name, davURL).Start() == nil
+	case "kio":
+		return []backendCmd{
+			{Name: "kioclient6", MountArg: "mount", UnmountArg: "unmount"},
+			{Name: "kioclient5", MountArg: "mount", UnmountArg: "unmount"},
+			{Name: "kioclient", MountArg: "mount", UnmountArg: "unmount"},
+		}
 	}
-	// gio mount dav://127.0.0.1:PORT
-	// mounts to /run/user/$UID/gvfs/...
-	cmd := exec.Command(name, "mount", davURL)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  gio mount failed: %s\n", strings.TrimSpace(string(out)))
-		return false
+
+	// DE detection.
+	de := strings.ToLower(os.Getenv("XDG_CURRENT_DESKTOP"))
+	switch {
+	case strings.Contains(de, "kde"):
+		return []backendCmd{
+			{Name: "kioclient6", MountArg: "mount", UnmountArg: "unmount"},
+			{Name: "kioclient5", MountArg: "mount", UnmountArg: "unmount"},
+			{Name: "kioclient", MountArg: "mount", UnmountArg: "unmount"},
+			{Name: "gio", MountArg: "mount", UnmountArg: "-u"},
+		}
+	case de == "gnome" || de == "cinnamon" || strings.Contains(de, "xfce") ||
+		de == "budgie" || de == "pantheon" || de == "mate" || de == "lxde":
+		return []backendCmd{
+			{Name: "gio", MountArg: "mount", UnmountArg: "-u"},
+			{Name: "kioclient6", MountArg: "mount", UnmountArg: "unmount"},
+			{Name: "kioclient5", MountArg: "mount", UnmountArg: "unmount"},
+			{Name: "kioclient", MountArg: "mount", UnmountArg: "unmount"},
+		}
+	default:
+		// Unknown / tiling WM / none — try everything.
+		return []backendCmd{
+			{Name: "gio", MountArg: "mount", UnmountArg: "-u"},
+			{Name: "kioclient6", MountArg: "mount", UnmountArg: "unmount"},
+			{Name: "kioclient5", MountArg: "mount", UnmountArg: "unmount"},
+			{Name: "kioclient", MountArg: "mount", UnmountArg: "unmount"},
+		}
 	}
-	return true
 }
 
-func gvfsUnmount(davURL string) error {
-	if _, err := exec.LookPath("gio"); err == nil {
-		return run("gio", "mount", "-u", davURL)
+func linuxMount(davURL string) bool {
+	for _, b := range linuxBackends() {
+		if _, err := exec.LookPath(b.Name); err != nil {
+			continue
+		}
+		args := []string{}
+		if b.MountArg != "" {
+			args = append(args, b.MountArg)
+		}
+		args = append(args, davURL)
+		cmd := exec.Command(b.Name, args...)
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			return true
+		}
+		fmt.Fprintf(os.Stderr, "  %s mount failed: %s\n", b.Name, strings.TrimSpace(string(out)))
 	}
-	return run("gvfs-mount", "-u", davURL)
-}
-
-func macMount() bool {
-	// macOS Finder supports WebDAV via http:// in "Connect to Server".
-	// `open http://...` opens the browser, which is wrong.
-	// Just print instructions for now.
 	return false
+}
+
+func linuxUnmount(davURL string) error {
+	for _, b := range linuxBackends() {
+		if _, err := exec.LookPath(b.Name); err != nil {
+			continue
+		}
+		args := []string{}
+		if b.UnmountArg != "" {
+			args = append(args, b.UnmountArg)
+		}
+		args = append(args, davURL)
+		out, err := exec.Command(b.Name, args...).CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		return fmt.Errorf("%s unmount failed: %w\n%s", b.Name, err, out)
+	}
+	return fmt.Errorf("no mount backend found")
+}
+
+func macMount(httpURL string) bool {
+	// macOS Finder mounts WebDAV via http://.
+	script := fmt.Sprintf(
+		`tell application "Finder" to mount volume "%s"`, httpURL)
+	cmd := exec.Command("osascript", "-e", script)
+	return cmd.Start() == nil
 }
 
 func winMount(port int, drive string) bool {
@@ -166,8 +392,6 @@ func winMount(port int, drive string) bool {
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 	return run("net", "use", drive, url) == nil
 }
-
-// --- Utilities ---
 
 func run(name string, arg ...string) error {
 	if _, err := exec.LookPath(name); err != nil {

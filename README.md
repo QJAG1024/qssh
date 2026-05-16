@@ -57,12 +57,32 @@ go build -o qssh .
 
 连接过程显示逐步状态：DNS 解析、TCP 连接、SSH 握手、认证、PTY 分配、启动 Shell。
 
+### 远程文件访问（WebDAV 挂载）
+
+```bash
+# 将远程目录挂载到本地文件管理器
+./qssh --mount myserver
+
+# 文件管理器自动弹出，可浏览、编辑远程文件
+# 按 Ctrl+C 卸载并退出
+```
+
+无需额外挂载工具，复用已有 SSH 连接（不重新认证），底层通过 WebDAV 桥接 SFTP。
+
+| 平台 | 自动挂载 |
+|---|---|
+| Linux (GNOME) | `gio mount dav://127.0.0.1:PORT` |
+| macOS | Finder → 连接服务器 |
+| Windows | `net use Z: http://127.0.0.1:PORT` |
+
 ### 管理
 
 ```bash
 ./qssh --list [filter]    # 列出凭据，可选关键词过滤
 ./qssh --edit myserver    # 修改凭据
 ./qssh --delete myserver  # 删除凭据
+./qssh --mount myserver   # 挂载远程目录（WebDAV，按 Ctrl+C 卸载）
+./qssh --umount <target>  # 卸载已挂载的目录
 ./qssh --version          # 查看版本
 ```
 
@@ -74,5 +94,7 @@ go build -o qssh .
 
 ## 依赖
 
-- [golang.org/x/crypto](https://pkg.go.dev/golang.org/x/crypto) — SSH 协议
+- [golang.org/x/crypto](https://pkg.go.dev/golang.org/x/crypto) — SSH 协议 + 主机密钥验证
 - [golang.org/x/term](https://pkg.go.dev/golang.org/x/term) — 终端 raw mode
+- [golang.org/x/net/webdav](https://pkg.go.dev/golang.org/x/net/webdav) — WebDAV 服务端
+- [github.com/pkg/sftp](https://github.com/pkg/sftp) — SFTP 客户端

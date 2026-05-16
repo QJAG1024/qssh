@@ -8,29 +8,27 @@ import (
 	"qssh/mount"
 )
 
-// Mount connects to a profile and mounts it via WebDAV.
-func Mount(name string, mountPoint string) {
-	s, err := openStore()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening store: %v\n", err)
-		os.Exit(1)
-	}
+func init() {
+	// Wire up store opener for mount daemon.
+	mount.SetOpenStore(openStore)
+}
 
-	p, exists := s.Get(name)
-	if !exists {
-		fmt.Fprintf(os.Stderr, "Profile %q not found.\n", name)
-		os.Exit(1)
-	}
-
-	if err := mount.Mount(p, mountPoint); err != nil {
+// Mount launches a WebDAV mount daemon in the background.
+func Mount(name, mountPoint string) {
+	if err := mount.Mount(name, mountPoint); err != nil {
 		fmt.Fprintf(os.Stderr, "  Mount failed: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-// Unmount unmounts a previously mounted WebDAV filesystem.
-func Unmount(mountPoint string) {
-	if err := mount.Unmount(mountPoint); err != nil {
+// MountDaemon is the hidden entry point for the mount worker.
+func MountDaemon(name, port string) {
+	mount.MountDaemon(name, port)
+}
+
+// Unmount stops a mount daemon by profile name.
+func Unmount(name string) {
+	if err := mount.Unmount(name); err != nil {
 		fmt.Fprintf(os.Stderr, "  Unmount failed: %v\n", err)
 		os.Exit(1)
 	}
