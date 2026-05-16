@@ -62,7 +62,7 @@ jobs:
         run: |
           GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} \
           CGO_ENABLED=0 \
-          go build -ldflags="-s -w" -o qssh_${{ matrix.os }}_${{ matrix.arch }}${{ matrix.suffix }} .
+          go build -ldflags="-s -w -X 'main.version=$(git describe --tags --always)'" -o qssh_${{ matrix.os }}_${{ matrix.arch }}${{ matrix.suffix }} .
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2

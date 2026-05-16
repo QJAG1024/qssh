@@ -8,7 +8,7 @@ import (
 	"qssh/cmd"
 )
 
-const version = "0.2.1"
+var version = "dev"
 
 func main() {
 	var (
