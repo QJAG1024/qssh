@@ -93,7 +93,7 @@ func Mount(name, mountPoint string) error {
 
 	// Fork daemon — re-exec self with hidden flag.
 	cmd := exec.Command(os.Args[0], "--mount-daemon", name, "--port", fmt.Sprintf("%d", port))
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = daemonSysProcAttr()
 	cmd.Stderr = nil // detach stderr
 	cmd.Stdout = nil
 	cmd.Stdin = nil
