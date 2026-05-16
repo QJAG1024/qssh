@@ -53,7 +53,7 @@ Usage:
 
 	switch {
 	case showVer:
-		fmt.Printf("qssh v%s\n", version)
+		fmt.Printf("qssh %s\n", version)
 		return
 	case daemonName != "":
 		cmd.MountDaemon(daemonName, daemonPort)
