@@ -196,28 +196,36 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 		Message: "Session established, entering interactive mode",
 	})
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGWINCH)
+	winchSignals := windowChangeSignals()
+	notifySignals := make([]os.Signal, 0, 2+len(winchSignals))
+	notifySignals = append(notifySignals, syscall.SIGINT, syscall.SIGTERM)
+	for _, ws := range winchSignals {
+		notifySignals = append(notifySignals, ws)
+	}
+	signal.Notify(sigCh, notifySignals...)
 	defer signal.Stop(sigCh)
 
 	go func() {
 		for sig := range sigCh {
-			switch sig {
-			case syscall.SIGWINCH:
-				if rawFd >= 0 {
-					w, h, _ := term.GetSize(rawFd)
-					if w > 0 && h > 0 {
-						sshSesh.WindowChange(h, w)
-					}
+			isWinch := false
+			for _, ws := range winchSignals {
+				if sig == ws {
+					isWinch = true
+					break
 				}
-			default:
-				// Map common signals to SSH signals
-				sshSig := ssh.SIGINT
-				switch sig {
-				case syscall.SIGTERM:
-					sshSig = ssh.SIGTERM
-				}
-				sshSesh.Signal(sshSig)
 			}
+			if isWinch {
+				onWindowChange(rawFd, func(h, w int) {
+					sshSesh.WindowChange(h, w)
+				})
+				continue
+			}
+			// Map common signals to SSH signals
+			sshSig := ssh.SIGINT
+			if sig == syscall.SIGTERM {
+				sshSig = ssh.SIGTERM
+			}
+			sshSesh.Signal(sshSig)
 		}
 	}()
 
