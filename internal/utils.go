@@ -174,7 +174,7 @@ func RenderProgress(r StepResult) {
 
 // RenderProfileHeader prints the connection header with profile info.
 func RenderProfileHeader(name string, user string, host string, port int) {
-	fmt.Fprintf(os.Stderr, "Profile: %s (%s@%s:%d)\n", name, user, host, port)
+	fmt.Fprintf(os.Stderr, "配置: %s (%s@%s:%d)\n", name, user, host, port)
 }
 
 // RenderSummary prints a brief connection end summary.

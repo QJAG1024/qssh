@@ -34,7 +34,7 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 
 	progress(internal.StepResult{
 		ID: internal.StepDecrypt, Status: internal.StepDone,
-		Message: "Profile loaded",
+		Message: "配置已加载",
 	})
 
 	addr := net.JoinHostPort(p.Host, fmt.Sprintf("%d", p.Port))
@@ -42,15 +42,15 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 	// DNS resolve
 	progress(internal.StepResult{
 		ID: internal.StepDNSResolve, Status: internal.StepRunning,
-		Message: fmt.Sprintf("Resolving %s", p.Host),
+		Message: fmt.Sprintf("正在解析 %s", p.Host),
 	})
 	resolveStart := time.Now()
 	resolvedAddr, err := net.ResolveIPAddr("ip", p.Host)
 	if err != nil {
 		progress(internal.StepResult{
 			ID: internal.StepDNSResolve, Status: internal.StepFailed,
-			Message: fmt.Sprintf("DNS resolution failed: %v", err),
-			Hint:    "Check the hostname or IP address in the profile",
+			Message: fmt.Sprintf("DNS 解析失败: %v", err),
+			Hint:    "请检查配置文件中的主机名或 IP 地址",
 		})
 		return nil, fmt.Errorf("dns resolve: %w", err)
 	}
@@ -82,7 +82,7 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 	// TCP + SSH handshake
 	progress(internal.StepResult{
 		ID: internal.StepTCPConnect, Status: internal.StepRunning,
-		Message: fmt.Sprintf("Connecting to %s", addr),
+		Message: fmt.Sprintf("正在连接 %s", addr),
 	})
 	connectStart := time.Now()
 	client, err := ssh.Dial("tcp", addr, config)
@@ -91,14 +91,14 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 		if opErr, ok := err.(*net.OpError); ok {
 			progress(internal.StepResult{
 				ID: internal.StepTCPConnect, Status: internal.StepFailed,
-				Message: fmt.Sprintf("TCP connection failed: %s", opErr.Err),
-				Hint:    "Confirm the host is online, port is correct, and firewall allows access",
+				Message: fmt.Sprintf("TCP 连接失败: %s", opErr.Err),
+				Hint:    "请确认主机在线、端口正确、防火墙已放行",
 			})
 		} else {
 			progress(internal.StepResult{
 				ID: internal.StepAuthenticate, Status: internal.StepFailed,
-				Message: fmt.Sprintf("Authentication failed: %v", err),
-				Hint:    "Check credentials in profile: qssh --edit " + p.Name,
+				Message: fmt.Sprintf("认证失败: %v", err),
+				Hint:    "请检查配置中的凭据: qssh --edit " + p.Name,
 			})
 		}
 		return nil, fmt.Errorf("ssh dial: %w", err)
@@ -106,7 +106,7 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 	connectDone := time.Since(connectStart)
 	progress(internal.StepResult{
 		ID: internal.StepSSHHandshake, Status: internal.StepDone,
-		Detail: fmt.Sprintf("Connected in %dms", connectDone.Milliseconds()),
+		Detail: fmt.Sprintf("已连接 (%dms)", connectDone.Milliseconds()),
 	})
 
 	return &Session{client: client, profile: p}, nil
@@ -167,7 +167,7 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 	if err := sshSesh.RequestPty(termEnv, height, width, modes); err != nil {
 		progress(internal.StepResult{
 			ID: internal.StepAllocatePTY, Status: internal.StepFailed,
-			Message: fmt.Sprintf("PTY allocation failed: %v", err),
+			Message: fmt.Sprintf("PTY 分配失败: %v", err),
 		})
 		return fmt.Errorf("request pty: %w", err)
 	}
@@ -187,13 +187,13 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 	if err := sshSesh.Shell(); err != nil {
 		progress(internal.StepResult{
 			ID: internal.StepShellStart, Status: internal.StepFailed,
-			Message: fmt.Sprintf("Shell start failed: %v", err),
+			Message: fmt.Sprintf("Shell 启动失败: %v", err),
 		})
 		return fmt.Errorf("shell: %w", err)
 	}
 	progress(internal.StepResult{
 		ID: internal.StepShellStart, Status: internal.StepDone,
-		Message: "Session established, entering interactive mode",
+		Message: "会话已建立，进入交互模式",
 	})
 	sigCh := make(chan os.Signal, 1)
 	winchSignals := windowChangeSignals()
