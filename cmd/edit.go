@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"qssh/internal"
+	"qssh/internal/i18n"
 	"qssh/store"
 )
 
@@ -14,17 +15,17 @@ import (
 func Edit(name string) {
 	s, err := openStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening store: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("store.open_error")+"\n", err)
 		os.Exit(1)
 	}
 
 	p, exists := s.Get(name)
 	if !exists {
-		fmt.Fprintf(os.Stderr, "Profile %q not found.\n", name)
+		fmt.Fprintf(os.Stderr, i18n.T("profile.not_found")+"\n", name)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Editing profile %q (press Enter to keep current value)\n", name)
+	fmt.Printf(i18n.T("field.edit_header")+"\n", name)
 	fmt.Println()
 
 	host := internal.Prompt("Host", p.Host)
@@ -56,7 +57,7 @@ func Edit(name string) {
 		case "keyboard-interactive", "ki":
 			p.Auth = store.AuthKeyboardInteractive
 		default:
-			fmt.Fprintf(os.Stderr, "Unsupported auth method %q\n", authStr)
+			fmt.Fprintf(os.Stderr, i18n.T("auth.unsupported")+"\n", authStr)
 			os.Exit(1)
 		}
 	}
@@ -67,7 +68,7 @@ func Edit(name string) {
 		if changePass {
 			pass, err := internal.ReadPassword("New password")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error reading password: %v\n", err)
+				fmt.Fprintf(os.Stderr, i18n.T("password.read_error")+"\n", err)
 				os.Exit(1)
 			}
 			p.Password = pass
@@ -81,8 +82,8 @@ func Edit(name string) {
 
 	p.SetDefaults()
 	if err := s.Update(name, p); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving profile: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("profile.save_error")+"\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Profile %q updated.\n", name)
+	fmt.Printf(i18n.T("profile.updated")+"\n", name)
 }

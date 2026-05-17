@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"qssh/internal"
+	"qssh/internal/i18n"
 	"qssh/sshclient"
 )
 
@@ -13,13 +14,13 @@ import (
 func Connect(name string) {
 	s, err := openStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening store: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("store.open_error")+"\n", err)
 		os.Exit(1)
 	}
 
 	p, exists := s.Get(name)
 	if !exists {
-		fmt.Fprintf(os.Stderr, "Profile %q not found.\n", name)
+		fmt.Fprintf(os.Stderr, i18n.T("profile.not_found")+"\n", name)
 		os.Exit(1)
 	}
 
@@ -28,7 +29,7 @@ func Connect(name string) {
 	session, err := sshclient.Dial(p, internal.RenderProgress)
 	if err != nil {
 		// Dial already rendered failure steps via progress callback.
-		fmt.Fprintf(os.Stderr, "  Connection failed.\n")
+		fmt.Fprintln(os.Stderr, i18n.T("connect.failed"))
 		os.Exit(1)
 	}
 	defer session.Close()
@@ -36,7 +37,7 @@ func Connect(name string) {
 	startTime := time.Now()
 	if err := session.InteractiveShell(os.Stdin, os.Stdout, os.Stderr, internal.RenderProgress); err != nil {
 		// Session ended with error — still count it as connected.
-		fmt.Fprintf(os.Stderr, "\n  Session ended: %v\n", err)
+		fmt.Fprintf(os.Stderr, "\n"+i18n.T("connect.ended")+"\n", err)
 	}
 
 	duration := time.Since(startTime)

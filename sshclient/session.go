@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"qssh/internal"
+	"qssh/internal/i18n"
 	"qssh/store"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -34,7 +35,7 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 
 	progress(internal.StepResult{
 		ID: internal.StepDecrypt, Status: internal.StepDone,
-		Message: "Profile loaded",
+		Message: i18n.T("profile.loaded"),
 	})
 
 	addr := net.JoinHostPort(p.Host, fmt.Sprintf("%d", p.Port))
@@ -42,22 +43,22 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 	// DNS resolve
 	progress(internal.StepResult{
 		ID: internal.StepDNSResolve, Status: internal.StepRunning,
-		Message: fmt.Sprintf("Resolving %s", p.Host),
+		Message: i18n.T("resolving", p.Host),
 	})
 	resolveStart := time.Now()
 	resolvedAddr, err := net.ResolveIPAddr("ip", p.Host)
 	if err != nil {
 		progress(internal.StepResult{
 			ID: internal.StepDNSResolve, Status: internal.StepFailed,
-			Message: fmt.Sprintf("DNS resolution failed: %v", err),
-			Hint:    "Check the hostname or IP address in the profile",
+			Message: i18n.T("dns_resolve.failed", err),
+			Hint:    i18n.T("dns_resolve.hint"),
 		})
 		return nil, fmt.Errorf("dns resolve: %w", err)
 	}
 	resolveDone := time.Since(resolveStart)
 	progress(internal.StepResult{
 		ID: internal.StepDNSResolve, Status: internal.StepDone,
-		Detail: fmt.Sprintf("%s → %s (%dms)", p.Host, resolvedAddr, resolveDone.Milliseconds()),
+		Detail: i18n.T("dns_resolve.detail", p.Host, resolvedAddr, resolveDone.Milliseconds()),
 	})
 
 	// Host key callback
@@ -82,7 +83,7 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 	// TCP + SSH handshake
 	progress(internal.StepResult{
 		ID: internal.StepTCPConnect, Status: internal.StepRunning,
-		Message: fmt.Sprintf("Connecting to %s", addr),
+		Message: i18n.T("connecting", addr),
 	})
 	connectStart := time.Now()
 	client, err := ssh.Dial("tcp", addr, config)
@@ -91,14 +92,14 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 		if opErr, ok := err.(*net.OpError); ok {
 			progress(internal.StepResult{
 				ID: internal.StepTCPConnect, Status: internal.StepFailed,
-				Message: fmt.Sprintf("TCP connection failed: %s", opErr.Err),
-				Hint:    "Confirm the host is online, port is correct, and firewall allows access",
+				Message: i18n.T("tcp_connect.failed", opErr.Err),
+				Hint:    i18n.T("tcp_connect.hint"),
 			})
 		} else {
 			progress(internal.StepResult{
 				ID: internal.StepAuthenticate, Status: internal.StepFailed,
-				Message: fmt.Sprintf("Authentication failed: %v", err),
-				Hint:    "Check credentials in profile: qssh --edit " + p.Name,
+				Message: i18n.T("authenticate.failed", err),
+				Hint:    i18n.T("authenticate.hint", p.Name),
 			})
 		}
 		return nil, fmt.Errorf("ssh dial: %w", err)
@@ -106,7 +107,7 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 	connectDone := time.Since(connectStart)
 	progress(internal.StepResult{
 		ID: internal.StepSSHHandshake, Status: internal.StepDone,
-		Detail: fmt.Sprintf("Connected in %dms", connectDone.Milliseconds()),
+		Detail: i18n.T("connected", connectDone.Milliseconds()),
 	})
 
 	return &Session{client: client, profile: p}, nil
@@ -167,7 +168,7 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 	if err := sshSesh.RequestPty(termEnv, height, width, modes); err != nil {
 		progress(internal.StepResult{
 			ID: internal.StepAllocatePTY, Status: internal.StepFailed,
-			Message: fmt.Sprintf("PTY allocation failed: %v", err),
+			Message: i18n.T("pty_allocate.failed", err),
 		})
 		return fmt.Errorf("request pty: %w", err)
 	}
@@ -187,13 +188,13 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 	if err := sshSesh.Shell(); err != nil {
 		progress(internal.StepResult{
 			ID: internal.StepShellStart, Status: internal.StepFailed,
-			Message: fmt.Sprintf("Shell start failed: %v", err),
+			Message: i18n.T("shell_start.failed", err),
 		})
 		return fmt.Errorf("shell: %w", err)
 	}
 	progress(internal.StepResult{
 		ID: internal.StepShellStart, Status: internal.StepDone,
-		Message: "Session established, entering interactive mode",
+		Message: i18n.T("session.ready"),
 	})
 	sigCh := make(chan os.Signal, 1)
 	winchSignals := windowChangeSignals()

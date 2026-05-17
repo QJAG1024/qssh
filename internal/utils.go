@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"qssh/internal/i18n"
 	"golang.org/x/term"
 )
 
@@ -94,21 +95,21 @@ const (
 func (s StepID) String() string {
 	switch s {
 	case StepDecrypt:
-		return "凭据解密"
+		return "decrypt"
 	case StepDNSResolve:
-		return "DNS 解析"
+		return "dns_resolve"
 	case StepTCPConnect:
-		return "TCP 连接建立"
+		return "tcp_connect"
 	case StepSSHHandshake:
-		return "SSH 握手"
+		return "ssh_handshake"
 	case StepAuthenticate:
-		return "认证"
+		return "authenticate"
 	case StepAllocatePTY:
-		return "PTY 分配"
+		return "allocate_pty"
 	case StepShellStart:
-		return "启动 Shell"
+		return "shell_start"
 	default:
-		return "未知步骤"
+		return "unknown"
 	}
 }
 
@@ -159,7 +160,7 @@ func RenderProgress(r StepResult) {
 	status := r.Status.String()
 	msg := r.Message
 	if msg == "" {
-		msg = r.ID.String()
+		msg = i18n.T("step." + r.ID.String())
 	}
 	line := fmt.Sprintf("  %s %s", status, msg)
 	if r.Detail != "" {
@@ -174,10 +175,10 @@ func RenderProgress(r StepResult) {
 
 // RenderProfileHeader prints the connection header with profile info.
 func RenderProfileHeader(name string, user string, host string, port int) {
-	fmt.Fprintf(os.Stderr, "Profile: %s (%s@%s:%d)\n", name, user, host, port)
+	fmt.Fprintf(os.Stderr, i18n.T("profile.header")+"\n", name, user, host, port)
 }
 
 // RenderSummary prints a brief connection end summary.
 func RenderSummary(name string, duration string) {
-	fmt.Fprintf(os.Stderr, "  ⚡ 连接已关闭 (%s)\n", duration)
+	fmt.Fprintf(os.Stderr, i18n.T("session.closed")+"\n", duration)
 }

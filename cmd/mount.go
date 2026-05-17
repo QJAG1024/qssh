@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"qssh/internal"
+	"qssh/internal/i18n"
 	"qssh/mount"
 )
 
@@ -16,7 +17,7 @@ func init() {
 // Mount launches a WebDAV mount daemon in the background.
 func Mount(name, mountPoint string) {
 	if err := mount.Mount(name, mountPoint); err != nil {
-		fmt.Fprintf(os.Stderr, "  Mount failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("mount.failed")+"\n", err)
 		os.Exit(1)
 	}
 }
@@ -29,11 +30,11 @@ func MountDaemon(name, port string) {
 // Unmount stops a mount daemon by profile name.
 func Unmount(name string) {
 	if err := mount.Unmount(name); err != nil {
-		fmt.Fprintf(os.Stderr, "  Unmount failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("mount.unmount_failed")+"\n", err)
 		os.Exit(1)
 	}
 	internal.RenderProgress(internal.StepResult{
 		ID: internal.StepShellStart, Status: internal.StepDone,
-		Message: "Unmounted",
+		Message: i18n.T("mount.unmounted"),
 	})
 }

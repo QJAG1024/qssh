@@ -6,6 +6,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"qssh/internal/i18n"
 	"qssh/store"
 )
 
@@ -13,7 +14,7 @@ import (
 func List(filter string) {
 	s, err := openStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening store: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("store.open_error")+"\n", err)
 		os.Exit(1)
 	}
 
@@ -33,15 +34,15 @@ func List(filter string) {
 
 	if len(profiles) == 0 {
 		if filter != "" {
-			fmt.Printf("No profiles matching %q.\n", filter)
+			fmt.Printf(i18n.T("profile.list_empty_filter")+"\n", filter)
 		} else {
-			fmt.Println("No profiles. Use 'qssh --add <name>' to create one.")
+			fmt.Println(i18n.T("profile.list_empty"))
 		}
 		return
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "Name\tHost\tPort\tUser\tAuth\tLast Used\tCount")
+	fmt.Fprintln(w, i18n.T("list.header.name")+"\t"+i18n.T("list.header.host")+"\t"+i18n.T("list.header.port")+"\t"+i18n.T("list.header.user")+"\t"+i18n.T("list.header.auth")+"\t"+i18n.T("list.header.last_used")+"\t"+i18n.T("list.header.count"))
 	fmt.Fprintln(w, "----\t----\t----\t----\t----\t---------\t-----")
 
 	for _, p := range profiles {

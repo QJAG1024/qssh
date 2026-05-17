@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"qssh/internal"
+	"qssh/internal/i18n"
 )
 
 // Config handles --config get/set operations.
@@ -18,24 +19,24 @@ func Config(args []string) {
 	switch args[0] {
 	case "get":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "Usage: qssh --config get <key>")
+			fmt.Fprintln(os.Stderr, i18n.T("config.usage.get"))
 			os.Exit(1)
 		}
 		getConfig(args[1])
 	case "set":
 		if len(args) < 3 {
-			fmt.Fprintln(os.Stderr, "Usage: qssh --config set <key> <value>")
+			fmt.Fprintln(os.Stderr, i18n.T("config.usage.set"))
 			os.Exit(1)
 		}
 		setConfig(args[1], args[2])
 	case "unset":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "Usage: qssh --config unset <key>")
+			fmt.Fprintln(os.Stderr, i18n.T("config.usage.unset"))
 			os.Exit(1)
 		}
 		unsetConfig(args[1])
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown config action %q (use get/set/unset)\n", args[0])
+		fmt.Fprintf(os.Stderr, i18n.T("config.unknown_action")+"\n", args[0])
 		os.Exit(1)
 	}
 }
@@ -44,7 +45,7 @@ func listConfig() {
 	c := internal.OpenConfig(internal.DefaultConfigPath())
 	all := c.All()
 	if len(all) == 0 {
-		fmt.Println("(no config)")
+		fmt.Println(i18n.T("config.empty"))
 		return
 	}
 	keys := make([]string, 0, len(all))
@@ -61,7 +62,7 @@ func getConfig(key string) {
 	c := internal.OpenConfig(internal.DefaultConfigPath())
 	val := c.Get(key)
 	if val == "" {
-		fmt.Println("(not set)")
+		fmt.Println(i18n.T("config.not_set"))
 	} else {
 		fmt.Println(val)
 	}
@@ -70,7 +71,7 @@ func getConfig(key string) {
 func setConfig(key, value string) {
 	c := internal.OpenConfig(internal.DefaultConfigPath())
 	if err := c.Set(key, value); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("config.save_error")+"\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("%s = %s\n", key, value)
@@ -79,8 +80,8 @@ func setConfig(key, value string) {
 func unsetConfig(key string) {
 	c := internal.OpenConfig(internal.DefaultConfigPath())
 	if err := c.Set(key, ""); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving config: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("config.save_error")+"\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("%s unset\n", key)
+	fmt.Printf(i18n.T("config.unset")+"\n", key)
 }

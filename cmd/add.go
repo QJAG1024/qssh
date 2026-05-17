@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"qssh/internal"
+	"qssh/internal/i18n"
 	"qssh/store"
 )
 
@@ -14,13 +15,13 @@ import (
 func Add(name string) {
 	s, err := openStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening store: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("store.open_error", err), err)
 		os.Exit(1)
 	}
 
 	// Check if profile already exists.
 	if _, exists := s.Get(name); exists {
-		fmt.Fprintf(os.Stderr, "Profile %q already exists. Use --edit to modify it.\n", name)
+		fmt.Fprintf(os.Stderr, i18n.T("profile.exists")+"\n", name)
 		os.Exit(1)
 	}
 
@@ -28,7 +29,7 @@ func Add(name string) {
 
 	p.Host = internal.Prompt("Host", "")
 	if p.Host == "" {
-		fmt.Fprintln(os.Stderr, "Host is required.")
+		fmt.Fprintln(os.Stderr, i18n.T("field.required_host"))
 		os.Exit(1)
 	}
 
@@ -37,7 +38,7 @@ func Add(name string) {
 
 	p.User = internal.Prompt("User", "")
 	if p.User == "" {
-		fmt.Fprintln(os.Stderr, "User is required.")
+		fmt.Fprintln(os.Stderr, i18n.T("field.required_user"))
 		os.Exit(1)
 	}
 
@@ -47,7 +48,7 @@ func Add(name string) {
 		p.Auth = store.AuthPassword
 		pass, err := internal.ReadPassword("Password")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading password: %v\n", err)
+			fmt.Fprintf(os.Stderr, i18n.T("password.read_error")+"\n", err)
 			os.Exit(1)
 		}
 		p.Password = pass
@@ -59,15 +60,15 @@ func Add(name string) {
 	case "keyboard-interactive", "ki":
 		p.Auth = store.AuthKeyboardInteractive
 	default:
-		fmt.Fprintf(os.Stderr, "Unsupported auth method %q\n", authStr)
+		fmt.Fprintf(os.Stderr, i18n.T("auth.unsupported")+"\n", authStr)
 		os.Exit(1)
 	}
 
 	p.SetDefaults()
 	if err := s.Add(p); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving profile: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("profile.save_error")+"\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Profile %q created. Use 'qssh %s' to connect.\n", name, name)
+	fmt.Printf(i18n.T("profile.created")+"\n", name, name)
 }

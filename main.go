@@ -6,11 +6,20 @@ import (
 	"os"
 
 	"qssh/cmd"
+	"qssh/internal"
+	"qssh/internal/i18n"
 )
 
 var version = "dev"
 
 func main() {
+	// Load config and apply locale override before any command runs.
+	if cfg := internal.OpenConfig(internal.DefaultConfigPath()); cfg != nil {
+		if lang := cfg.Get("lang"); lang != "" {
+			i18n.SetLocale(lang)
+		}
+	}
+
 	var (
 		addName       string
 		editName      string
@@ -35,19 +44,7 @@ func main() {
 	flag.BoolVar(&doList, "list", false, "List profiles (optional: qssh --list filter)")
 	flag.BoolVar(&showVer, "version", false, "Print version")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `QSSH - SSH Credential Manager v%s
-
-Usage:
-  qssh <profile>                    Connect to a profile
-  qssh --add <name>                 Create a new profile
-  qssh --edit <name>                Edit an existing profile
-  qssh --list [filter]              List profiles (optional substring filter)
-  qssh --delete <name>              Delete a profile
-  qssh --mount <name>               Mount profile via WebDAV (background)
-  qssh --umount <name>              Unmount a profile
-  qssh --config [get|set ...]       View or modify config
-  qssh --version                    Print version
-`, version)
+		fmt.Fprintf(os.Stderr, i18n.T("usage.text"), version)
 	}
 	flag.Parse()
 

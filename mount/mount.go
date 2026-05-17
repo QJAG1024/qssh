@@ -27,10 +27,11 @@ import (
 // --- State file ---
 
 type mountEntry struct {
-	Port   int    `json:"port"`
-	PID    int    `json:"pid"`
-	DavURL string `json:"dav_url"`
-	Status string `json:"status"` // "starting", "ready", "failed"
+	Port    int    `json:"port"`
+	PID     int    `json:"pid"`
+	DavURL  string `json:"dav_url"`
+	Status  string `json:"status"` // "starting", "ready", "failed"
+	Message string `json:"message,omitempty"`
 }
 
 func statePath() string {
@@ -85,9 +86,10 @@ func Mount(name, mountPoint string) error {
 	// Write initial state before forking.
 	davURL := fmt.Sprintf("dav://127.0.0.1:%d", port)
 	state[name] = mountEntry{
-		Port:   port,
-		DavURL: davURL,
-		Status: "starting",
+		Port:    port,
+		DavURL:  davURL,
+		Status:  "starting",
+		Message: "Starting...",
 	}
 	saveState(state)
 
@@ -104,14 +106,20 @@ func Mount(name, mountPoint string) error {
 		return fmt.Errorf("fork daemon: %w", err)
 	}
 
-	// Wait for daemon to reach "ready" (up to 5s).
-	deadline := time.Now().Add(5 * time.Second)
+	// Wait for daemon to reach "ready".
+	lastMsg := ""
+	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 		st := loadState()
 		entry, ok := st[name]
 		if !ok {
 			break // cleaned up — daemon likely failed
+		}
+		// Print new progress messages from daemon.
+		if entry.Message != "" && entry.Message != lastMsg {
+			fmt.Fprintln(os.Stderr, "  → "+entry.Message)
+			lastMsg = entry.Message
 		}
 		switch entry.Status {
 		case "ready":
@@ -124,6 +132,16 @@ func Mount(name, mountPoint string) error {
 		case "failed":
 			return fmt.Errorf("daemon failed")
 		}
+	}
+
+	// Timeout — clean up orphaned daemon and its state.
+	st := loadState()
+	if entry, ok := st[name]; ok {
+		if proc, err := os.FindProcess(entry.PID); err == nil {
+			proc.Kill()
+		}
+		delete(st, name)
+		saveState(st)
 	}
 	return fmt.Errorf("daemon did not become ready in time")
 }
@@ -139,29 +157,36 @@ func MountDaemon(profileName, portStr string) {
 		os.Exit(1)
 	}
 
+	setProgress(profileName, "Opening store...")
 	openStore, err := openStoreFn()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[mount-daemon] open store: %v\n", err)
 		setFailed(profileName)
 		os.Exit(1)
 	}
 
 	p, exists := openStore.Get(profileName)
 	if !exists {
+		fmt.Fprintf(os.Stderr, "[mount-daemon] profile %q not found\n", profileName)
 		setFailed(profileName)
 		os.Exit(1)
 	}
 
 	// Dial SSH.
+	setProgress(profileName, "Connecting SSH...")
 	session, err := sshclient.Dial(p, internal.NopProgress)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[mount-daemon] SSH dial: %v\n", err)
 		setFailed(profileName)
 		os.Exit(1)
 	}
 	defer session.Close()
 
 	// SFTP client.
+	setProgress(profileName, "Starting SFTP...")
 	sfClient, err := sftp.NewClient(session.Client())
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[mount-daemon] SFTP: %v\n", err)
 		setFailed(profileName)
 		os.Exit(1)
 	}
@@ -186,6 +211,7 @@ func MountDaemon(profileName, portStr string) {
 	// Linux (GVFS) uses dav:// scheme; macOS/Windows use http://.
 	davURL := fmt.Sprintf("dav://127.0.0.1:%d", port)
 	httpURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	if runtime.GOOS == "linux" { setProgress(profileName, "Mounting via gio...") }
 	mounted := false
 	switch runtime.GOOS {
 	case "linux":
@@ -258,12 +284,22 @@ func cleanupMount(name, davURL string) {
 func markReady(name string, port int, davURL string, pid int) {
 	state := loadState()
 	state[name] = mountEntry{
-		Port:   port,
-		PID:    pid,
-		DavURL: davURL,
-		Status: "ready",
+		Port:    port,
+		PID:     pid,
+		DavURL:  davURL,
+		Status:  "ready",
+		Message: "",
 	}
 	saveState(state)
+}
+
+func setProgress(name, msg string) {
+	state := loadState()
+	if entry, ok := state[name]; ok {
+		entry.Message = msg
+		state[name] = entry
+		saveState(state)
+	}
 }
 
 func setFailed(name string) {
