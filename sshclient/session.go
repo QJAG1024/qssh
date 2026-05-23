@@ -397,3 +397,26 @@ func agentAuth() (ssh.AuthMethod, error) {
 	}
 	return ssh.PublicKeys(signers...), nil
 }
+
+// RunCommand executes a single command on the remote host.
+// It connects stdout/stderr to the local process and optionally stdin for
+// interactive commands. Returns the remote exit code.
+func (s *Session) RunCommand(cmd string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
+	sshSesh, err := s.client.NewSession()
+	if err != nil {
+		return -1, fmt.Errorf("new session: %w", err)
+	}
+	defer sshSesh.Close()
+
+	sshSesh.Stdin = stdin
+	sshSesh.Stdout = stdout
+	sshSesh.Stderr = stderr
+
+	if err := sshSesh.Run(cmd); err != nil {
+		if exitErr, ok := err.(*ssh.ExitError); ok {
+			return exitErr.ExitStatus(), nil
+		}
+		return -1, err
+	}
+	return 0, nil
+}

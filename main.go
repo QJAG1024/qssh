@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"qssh/cmd"
 	"qssh/internal"
@@ -21,25 +22,39 @@ func main() {
 	}
 
 	var (
-		addName       string
-		editName      string
-		delName       string
-		mountName     string
-		umountName    string
-		daemonName    string
-		daemonPort    string
-		doConfig      bool
-		doList        bool
-		showVer       bool
+		addName        string
+		editName       string
+		delName        string
+		sftpStartName  string
+		sftpBind       string
+		sftpStopName   string
+		execName       string
+		daemonStart    string // --daemon-start
+		daemonStop     string // --daemon-stop
+		sftpDaemon     string // --sftp-daemon (internal)
+		daemonRunName  string // --daemon-run (internal)
+		daemonModeFlag string // --daemon-mode (internal)
+		daemonPort     string // --port (internal)
+		daemonBind     string // --bind-addr (internal)
+		doConfig       bool
+		doList         bool
+		showVer        bool
 	)
 
 	flag.StringVar(&addName, "add", "", "Create a new profile")
 	flag.StringVar(&editName, "edit", "", "Edit an existing profile")
 	flag.StringVar(&delName, "delete", "", "Delete a profile")
-	flag.StringVar(&mountName, "mount", "", "Mount a profile via WebDAV (usage: qssh --mount <name>)")
-	flag.StringVar(&umountName, "umount", "", "Unmount a profile (usage: qssh --umount <name>)")
-	flag.StringVar(&daemonName, "mount-daemon", "", "Internal: mount worker (profile name)")
-	flag.StringVar(&daemonPort, "port", "", "Internal: mount worker port")
+	flag.StringVar(&sftpStartName, "sftp-start", "", "Start SFTP proxy for a profile (usage: qssh --sftp-start <name>)")
+	flag.StringVar(&sftpBind, "bind", "", "Bind address for SFTP proxy (default: 127.0.0.1)")
+	flag.StringVar(&sftpStopName, "sftp-stop", "", "Stop SFTP proxy for a profile (usage: qssh --sftp-stop <name>)")
+	flag.StringVar(&execName, "exec", "", "Run a command on a profile (usage: qssh --exec <profile> <command>)")
+	flag.StringVar(&daemonStart, "daemon-start", "", "Start background daemon for connection reuse")
+	flag.StringVar(&daemonStop, "daemon-stop", "", "Stop a background daemon")
+	flag.StringVar(&sftpDaemon, "sftp-daemon", "", "Internal: SFTP proxy worker (profile name)")
+	flag.StringVar(&daemonRunName, "daemon-run", "", "Internal: daemon worker")
+	flag.StringVar(&daemonModeFlag, "daemon-mode", "", "Internal: daemon mode (persistent|managed)")
+	flag.StringVar(&daemonPort, "port", "", "Internal: port")
+	flag.StringVar(&daemonBind, "bind-addr", "", "Internal: bind address")
 	flag.BoolVar(&doConfig, "config", false, "View or modify config (usage: qssh --config [get|set <key> <value>])")
 	flag.BoolVar(&doList, "list", false, "List profiles (optional: qssh --list filter)")
 	flag.BoolVar(&showVer, "version", false, "Print version")
@@ -52,8 +67,18 @@ func main() {
 	case showVer:
 		fmt.Printf("qssh %s\n", version)
 		return
-	case daemonName != "":
-		cmd.MountDaemon(daemonName, daemonPort)
+	case daemonRunName != "":
+		mode := "persistent"
+		if daemonModeFlag == "managed" {
+			mode = "managed"
+		}
+		cmd.RunDaemon(daemonRunName, mode)
+	case daemonStart != "":
+		cmd.StartDaemon(daemonStart)
+	case daemonStop != "":
+		cmd.StopDaemon(daemonStop)
+	case sftpDaemon != "":
+		cmd.SftpDaemon(sftpDaemon, daemonPort, daemonBind)
 	case doConfig:
 		cmd.Config(flag.Args())
 	case addName != "":
@@ -62,14 +87,25 @@ func main() {
 		cmd.Edit(editName)
 	case delName != "":
 		cmd.Delete(delName)
-	case mountName != "":
-		mountPoint := ""
-		if flag.NArg() > 0 {
-			mountPoint = flag.Arg(0)
+	case execName != "":
+		if flag.NArg() == 0 {
+			fmt.Fprintln(os.Stderr, "error: --exec requires a command")
+			os.Exit(1)
 		}
-		cmd.Mount(mountName, mountPoint)
-	case umountName != "":
-		cmd.Unmount(umountName)
+		cmd.Exec(execName, strings.Join(flag.Args(), " "))
+	case sftpStartName != "":
+		bindAddr := sftpBind
+		if bindAddr == "" {
+			if cfg := internal.OpenConfig(internal.DefaultConfigPath()); cfg != nil {
+				bindAddr = cfg.Get("sftp.bind")
+			}
+		}
+		if bindAddr == "" {
+			bindAddr = "127.0.0.1"
+		}
+		cmd.SftpStart(sftpStartName, bindAddr)
+	case sftpStopName != "":
+		cmd.SftpStop(sftpStopName)
 	case doList:
 		filter := ""
 		if flag.NArg() > 0 {

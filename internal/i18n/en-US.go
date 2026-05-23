@@ -67,14 +67,17 @@ var enUS = map[string]string{
 	"config.unset":          "%s unset",
 	"config.save_error":     "Error saving config: %v",
 
-	// Mount
-	"mount.mounted":         "Mounted: %s",
-	"mount.failed":          "Mount failed: %v",
-	"mount.unmount_failed":  "Unmount failed: %v",
-	"mount.daemon_failed":   "daemon failed",
-	"mount.backend_failed":  "%s mount failed: %s",
-	"mount.unmounted":       "Unmounted",
-	"mount.backend_not_found": "%s not found",
+	// SFTP
+	"sftp.preparing":         "Starting...",
+	"sftp.opening_store":     "Opening store...",
+	"sftp.connecting":        "Connecting SSH...",
+	"sftp.starting":          "Starting SFTP...",
+	"sftp.starting_proxy":    "Starting SFTP proxy...",
+	"sftp.proxy_started":     "SFTP proxy: %s",
+	"sftp.failed":            "SFTP start failed: %v",
+	"sftp.stop_failed":       "SFTP stop failed: %v",
+	"sftp.stopped":           "SFTP stopped",
+	"sftp.daemon_failed":     "daemon failed",
 
 	// List table headers
 	"list.header.name":      "Name",
@@ -99,8 +102,11 @@ Usage:
   qssh --edit <name>                Edit an existing profile
   qssh --list [filter]              List profiles (optional substring filter)
   qssh --delete <name>              Delete a profile
-  qssh --mount <name>               Mount profile via WebDAV (background)
-  qssh --umount <name>              Unmount a profile
+  qssh --exec <profile> <command>   Execute a command on a profile
+  qssh --sftp-start <name>          Start SFTP proxy for a profile
+  qssh --sftp-stop <name>           Stop SFTP proxy for a profile
+  qssh --daemon-start <name>        Start background daemon
+  qssh --daemon-stop <name>         Stop background daemon
   qssh --config [get|set ...]       View or modify config
   qssh --version                    Print version`,
 }

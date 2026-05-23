@@ -67,14 +67,17 @@ var zhCN = map[string]string{
 	"config.unset":          "%s 已删除",
 	"config.save_error":     "保存设置失败: %v",
 
-	// Mount
-	"mount.mounted":         "已挂载: %s",
-	"mount.failed":          "挂载失败: %v",
-	"mount.unmount_failed":  "卸载失败: %v",
-	"mount.daemon_failed":   "守护进程启动失败",
-	"mount.backend_failed":  "%s 挂载失败: %s",
-	"mount.unmounted":       "已卸载",
-	"mount.backend_not_found": "%s 未找到",
+	// SFTP
+	"sftp.preparing":         "正在准备...",
+	"sftp.opening_store":     "正在打开存储...",
+	"sftp.connecting":        "正在连接 SSH...",
+	"sftp.starting":          "正在启动 SFTP...",
+	"sftp.starting_proxy":    "正在启动 SFTP 代理...",
+	"sftp.proxy_started":     "SFTP 代理: %s",
+	"sftp.failed":            "SFTP 启动失败: %v",
+	"sftp.stop_failed":       "SFTP 停止失败: %v",
+	"sftp.stopped":           "SFTP 已停止",
+	"sftp.daemon_failed":     "守护进程启动失败",
 
 	// List table headers
 	"list.header.name":      "名称",
@@ -99,8 +102,11 @@ var zhCN = map[string]string{
   qssh --edit <name>                编辑已有配置
   qssh --list [filter]              列出配置（可选子串过滤）
   qssh --delete <name>              删除配置
-  qssh --mount <name>               通过 WebDAV 挂载（后台）
-  qssh --umount <name>              卸载
+  qssh --exec <profile> <command>   在配置上执行命令
+  qssh --sftp-start <name>          启动 SFTP 代理
+  qssh --sftp-stop <name>           停止 SFTP 代理
+  qssh --daemon-start <name>        启动后台守护进程
+  qssh --daemon-stop <name>         停止后台守护进程
   qssh --config [get|set ...]       查看或修改设置
   qssh --version                    显示版本`,
 }

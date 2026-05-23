@@ -1,6 +1,6 @@
 //go:build !windows
 
-package mount
+package sftpproxy
 
 import "syscall"
 
