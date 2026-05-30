@@ -13,13 +13,6 @@ Profile: homelab (root@192.168.10.139:22)
   ✔ PTY 分配
   → 启动 Shell
   ✔ Session established, entering interactive mode
-Welcome to Ubuntu 24.04 LTS (GNU/Linux 6.17.2-1-pve x86_64)
-
- * Documentation:  https://help.ubuntu.com
- * Management:     https://landscape.canonical.com
- * Support:        https://ubuntu.com/pro
-Last login: Sun May 10 06:52:25 2026 from 192.168.10.186
-root@homelab:~# 
 ```
 
 无须打开专门的桌面SSH客户端，也无须每次输入密码，只需要一行命令即可使用你熟悉的终端模拟器配置连接到你的主机。
@@ -57,33 +50,70 @@ go build -o qssh .
 
 连接过程显示逐步状态：DNS 解析、TCP 连接、SSH 握手、认证、PTY 分配、启动 Shell。
 
-### 远程文件访问（WebDAV 挂载）
+### 远程命令执行
+
+在远程主机上执行一条命令并返回退出码。
 
 ```bash
-# 将远程目录挂载到本地文件管理器
-./qssh --mount myserver
-
-# 文件管理器自动弹出，可浏览、编辑远程文件
-# 按 Ctrl+C 卸载并退出
+./qssh --exec myserver "uptime"
+./qssh --exec myserver "uname -a"
+./qssh --exec myserver "systemctl status sshd"
 ```
 
-无需额外挂载工具，复用已有 SSH 连接（不重新认证），底层通过 WebDAV 桥接 SFTP。
+如果该主机已有守护进程运行，则复用其连接，省去重复认证的开销；否则自动新建连接。
 
-| 平台 | 自动挂载 |
-|---|---|
-| Linux (GNOME) | `gio mount dav://127.0.0.1:PORT` |
-| macOS | Finder → 连接服务器 |
-| Windows | `net use Z: http://127.0.0.1:PORT` |
+### 远程文件访问（SFTP 代理）
+
+启动本地 SFTP 透明代理，可作为远程 SFTP 的中转。任何 SFTP 客户端均可连接使用（FileZilla、Cyberduck、`sftp` 命令行等）。
+
+```bash
+# 启动 SFTP 代理（监听随机端口）
+./qssh --sftp-start myserver
+
+# 指定绑定地址
+./qssh --sftp-start myserver --bind 127.0.0.1
+
+# 停止 SFTP 代理
+./qssh --sftp-stop myserver
+```
+
+代理接受任意密码作认证（透明转发），SSH 连接复用已有通道。
+
+如果后台守护进程正在运行，SFTP 代理会自动复用守护进程的连接。
+
+### 守护进程（后台连接复用）
+
+`--daemon-start` 在后台启动持久守护进程，保持 SSH 连接不断开。其他操作可以复用该连接，省去重复认证的开销。
+
+```bash
+# 启动后台守护进程
+./qssh --daemon-start myserver
+
+# 在守护进程连接上执行命令
+./qssh --exec myserver "uptime"
+
+# 复用守护进程启动 SFTP 代理
+./qssh --sftp-start myserver
+
+# 停止守护进程
+./qssh --daemon-stop myserver
+```
+
+守护进程默认以 `persistent` 模式运行，手动启动和停止。
 
 ### 管理
 
 ```bash
-./qssh --list [filter]    # 列出凭据，可选关键词过滤
-./qssh --edit myserver    # 修改凭据
-./qssh --delete myserver  # 删除凭据
-./qssh --mount myserver   # 挂载远程目录（WebDAV，按 Ctrl+C 卸载）
-./qssh --umount <target>  # 卸载已挂载的目录
-./qssh --version          # 查看版本
+./qssh --list [filter]              # 列出凭据，可选关键词过滤
+./qssh --edit myserver              # 修改凭据
+./qssh --delete myserver            # 删除凭据
+./qssh --config [get|set ...]       # 查看或修改设置
+./qssh --sftp-start myserver        # 启动 SFTP 代理
+./qssh --sftp-stop myserver         # 停止 SFTP 代理
+./qssh --exec myserver <cmd>        # 远程执行命令
+./qssh --daemon-start myserver      # 启动后台守护进程
+./qssh --daemon-stop myserver       # 停止后台守护进程
+./qssh --version                    # 查看版本
 ```
 
 ## 数据存储
@@ -91,10 +121,11 @@ go build -o qssh .
 - 凭据文件: `~/.config/qssh/store.json`（AES-256-GCM 加密）
 - 主密钥: 优先用 `secret-tool`（GNOME Keyring），回退到 `~/.config/qssh/key`
 - 已知主机: `~/.config/qssh/known_hosts`
+- 守护进程: `~/.config/qssh/<profile>.sock`（Unix socket）
+- SFTP 状态: `~/.config/qssh/sftp.json`
 
 ## 依赖
 
 - [golang.org/x/crypto](https://pkg.go.dev/golang.org/x/crypto) — SSH 协议 + 主机密钥验证
 - [golang.org/x/term](https://pkg.go.dev/golang.org/x/term) — 终端 raw mode
-- [golang.org/x/net/webdav](https://pkg.go.dev/golang.org/x/net/webdav) — WebDAV 服务端
-- [github.com/pkg/sftp](https://github.com/pkg/sftp) — SFTP 客户端
+- [github.com/pkg/sftp](https://github.com/pkg/sftp) — SFTP 客户端及代理
