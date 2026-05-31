@@ -14,6 +14,7 @@ type daemonReq struct {
 	Type     string `json:"type"`
 	Cmd      string `json:"cmd,omitempty"`
 	BindAddr string `json:"bind_addr,omitempty"`
+	MountPort int   `json:"mount_port,omitempty"`
 }
 
 type daemonResp struct {
@@ -55,7 +56,7 @@ func execViaDaemon(profile, cmd string) (int, error) {
 	return -1, fmt.Errorf("not supported on Windows")
 }
 
-func sftpViaDaemon(profile, bindAddr string) (int, string, error) {
+func sftpViaDaemon(profile, bindAddr string, port int) (int, string, error) {
 	return 0, "", fmt.Errorf("not supported on Windows")
 }
 
