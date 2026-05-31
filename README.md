@@ -28,7 +28,13 @@ go build -o qssh .
 ### 添加凭据
 
 ```bash
+# 交互式添加
 ./qssh --add myserver
+
+# 单行添加（AI agent 友好）
+./qssh --add myserver --host 192.168.1.1 --user root --auth password --password "xxx"
+./qssh --add myserver --host 192.168.1.1 --user root --auth key --key-path ~/.ssh/id_ed25519
+./qssh --add myserver --host example.com --user deploy --auth agent
 ```
 
 交互式填写 Host、Port、User、认证方式。
@@ -60,7 +66,9 @@ go build -o qssh .
 ./qssh --exec myserver "systemctl status sshd"
 ```
 
-如果该主机已有守护进程运行，则复用其连接，省去重复认证的开销；否则自动新建连接。
+首次执行时自动启动托管守护进程（managed daemon），保持 SSH 连接复用。后续调用瞬间完成，无需重复认证。守护进程空闲 5 分钟后自动退出，无需手动清理。
+
+特别适合 AI agent、脚本、自动化场景——只需调用 `--exec`，其余由工具管理。
 
 ### 远程文件访问（SFTP 代理）
 
@@ -83,23 +91,28 @@ go build -o qssh .
 
 ### 守护进程（后台连接复用）
 
-`--daemon-start` 在后台启动持久守护进程，保持 SSH 连接不断开。其他操作可以复用该连接，省去重复认证的开销。
+守护进程保持 SSH 连接不断开，其他操作可以复用该连接，省去重复认证的开销。
+
+**两种模式：**
+
+| 模式 | 说明 |
+|---|---|
+| `managed`（托管） | `--exec` 自动启动，空闲 5 分钟自动退出，无需手动管理 |
+| `persistent`（持久） | 手动 `--daemon-start` / `--daemon-stop`，长期驻留 |
 
 ```bash
-# 启动后台守护进程
+# 启动持久守护进程
 ./qssh --daemon-start myserver
 
-# 在守护进程连接上执行命令
+# 复用守护进程执行命令或启动 SFTP
 ./qssh --exec myserver "uptime"
-
-# 复用守护进程启动 SFTP 代理
 ./qssh --sftp-start myserver
 
-# 停止守护进程
+# 停止持久守护进程
 ./qssh --daemon-stop myserver
 ```
 
-守护进程默认以 `persistent` 模式运行，手动启动和停止。
+托管模式无需显式启动/停止守护进程——`--exec` 会自动处理。多次连续调用时复用同一连接，效率更高。
 
 ### 管理
 
