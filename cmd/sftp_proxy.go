@@ -16,10 +16,10 @@ func init() {
 }
 
 // SftpStart starts an SFTP proxy for the given profile.
-func SftpStart(name, bindAddr string) {
+func SftpStart(name, bindAddr string, port int) {
 	// If a daemon is already running, ask it to start SFTP proxy.
 	if daemonRunning(name) {
-		port, fingerprint, err := sftpViaDaemon(name, bindAddr)
+		port, fingerprint, err := sftpViaDaemon(name, bindAddr, port)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, i18n.T("sftp.failed")+"\n", err)
 			os.Exit(1)
@@ -35,7 +35,7 @@ func SftpStart(name, bindAddr string) {
 	}
 
 	// No daemon — use the fork-based approach.
-	if err := sftpproxy.Start(name, bindAddr); err != nil {
+	if err := sftpproxy.Start(name, bindAddr, port); err != nil {
 		fmt.Fprintf(os.Stderr, i18n.T("sftp.failed")+"\n", err)
 		os.Exit(1)
 	}

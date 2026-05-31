@@ -90,7 +90,10 @@ Batch related work into one command when possible, use separate calls when you n
 ./qssh --sftp-start myserver
 # → port=43210 fingerprint=SHA256:abc...
 
-# Use any SFTP client to connect at localhost:43210
+# Specify port
+./qssh --sftp-start myserver --bind 127.0.0.1 --port 22222
+
+# Use any SFTP client to connect at localhost:22222
 # (any password works — it's transparent)
 
 # Stop proxy

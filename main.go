@@ -123,7 +123,7 @@ func main() {
 		if bindAddr == "" {
 			bindAddr = "127.0.0.1"
 		}
-		cmd.SftpStart(sftpStartName, bindAddr)
+		cmd.SftpStart(sftpStartName, bindAddr, addPort)
 	case sftpStopName != "":
 		cmd.SftpStop(sftpStopName)
 	case doList:

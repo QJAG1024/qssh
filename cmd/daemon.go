@@ -46,6 +46,7 @@ type daemonReq struct {
 	Type     string `json:"type"`               // "exec", "mount", "unmount", "stop"
 	Cmd      string `json:"cmd,omitempty"`       // for exec
 	BindAddr string `json:"bind_addr,omitempty"` // for mount
+	MountPort int   `json:"mount_port,omitempty"` // for mount (0 = random)
 }
 
 type daemonResp struct {
@@ -298,6 +299,11 @@ func (d *daemon) handleMount(conn net.Conn, req daemonReq) {
 		bindAddr = "127.0.0.1"
 	}
 
+	portStr := "0"
+	if req.MountPort > 0 {
+		portStr = fmt.Sprintf("%d", req.MountPort)
+	}
+
 	// Read config dir for host key.
 	cfgDir := configDir()
 
@@ -310,7 +316,7 @@ func (d *daemon) handleMount(conn net.Conn, req daemonReq) {
 	fingerprint := ssh.FingerprintSHA256(signer.PublicKey())
 
 	// Listen on random port.
-	listener, err := net.Listen("tcp", net.JoinHostPort(bindAddr, "0"))
+	listener, err := net.Listen("tcp", net.JoinHostPort(bindAddr, portStr))
 	if err != nil {
 		d.writeJSON(conn, daemonResp{Type: "error", Msg: "listen: " + err.Error()})
 		return

@@ -73,14 +73,14 @@ func execViaDaemon(profile, cmd string) (int, error) {
 }
 
 // sftpViaDaemon asks the daemon to start SFTP proxy, returns port and fingerprint.
-func sftpViaDaemon(profile, bindAddr string) (port int, fingerprint string, err error) {
+func sftpViaDaemon(profile, bindAddr string, port int) (int, string, error) {
 	conn, err := dialDaemon(profile)
 	if err != nil {
 		return 0, "", err
 	}
 	defer conn.Close()
 
-	req := daemonReq{Type: "mount", BindAddr: bindAddr}
+	req := daemonReq{Type: "mount", BindAddr: bindAddr, MountPort: port}
 	data, _ := json.Marshal(req)
 	conn.Write(append(data, '\n'))
 

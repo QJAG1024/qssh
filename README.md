@@ -81,6 +81,9 @@ go build -o qssh .
 # 指定绑定地址
 ./qssh --sftp-start myserver --bind 127.0.0.1
 
+# 指定端口
+./qssh --sftp-start myserver --bind 127.0.0.1 --port 22222
+
 # 停止 SFTP 代理
 ./qssh --sftp-stop myserver
 ```

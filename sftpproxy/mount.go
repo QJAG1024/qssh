@@ -77,18 +77,23 @@ func configDir() string {
 // --- Start (launcher, foreground) ---
 
 // Start forks a daemon to serve SFTP and exits immediately.
-func Start(name, bindAddr string) error {
+// If port is 0, picks a random available port.
+func Start(name, bindAddr string, port int) error {
 	state := loadState()
 	if _, exists := state[name]; exists {
 		return fmt.Errorf("profile %q is already running", name)
 	}
 
-	// Pick a random port.
-	listener, err := net.Listen("tcp", net.JoinHostPort(bindAddr, "0"))
-	if err != nil {
-		return fmt.Errorf("pick port: %w", err)
+	// Use specified port or pick a random one.
+	portStr := "0"
+	if port > 0 {
+		portStr = fmt.Sprintf("%d", port)
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
+	listener, err := net.Listen("tcp", net.JoinHostPort(bindAddr, portStr))
+	if err != nil {
+		return fmt.Errorf("listen port: %w", err)
+	}
+	port = listener.Addr().(*net.TCPAddr).Port
 	listener.Close()
 
 	// Write initial state before forking.
