@@ -102,7 +102,7 @@ func Start(name, bindAddr string) error {
 	saveState(state)
 
 	// Fork daemon — re-exec self with hidden flag.
-	cmd := exec.Command(os.Args[0], "--sftp-daemon", name, "--port", fmt.Sprintf("%d", port), "--bind-addr", bindAddr)
+	cmd := exec.Command(os.Args[0], "--sftp-daemon", name, "--daemon-port", fmt.Sprintf("%d", port), "--bind-addr", bindAddr)
 	cmd.SysProcAttr = daemonSysProcAttr()
 	cmd.Stderr = nil // detach stderr
 	cmd.Stdout = nil

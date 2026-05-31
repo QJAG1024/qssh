@@ -23,6 +23,12 @@ func main() {
 
 	var (
 		addName        string
+		addHost        string
+		addPort        int
+		addUser        string
+		addAuth        string
+		addPassword    string
+		addKeyPath     string
 		editName       string
 		delName        string
 		sftpStartName  string
@@ -42,6 +48,12 @@ func main() {
 	)
 
 	flag.StringVar(&addName, "add", "", "Create a new profile")
+	flag.StringVar(&addHost, "host", "", "Host for --add")
+	flag.IntVar(&addPort, "port", 0, "Port for --add")
+	flag.StringVar(&addUser, "user", "", "User for --add")
+	flag.StringVar(&addAuth, "auth", "", "Auth method for --add (password/key/agent/keyboard-interactive)")
+	flag.StringVar(&addPassword, "password", "", "Password for --add")
+	flag.StringVar(&addKeyPath, "key-path", "", "Key path for --add (used with --auth key)")
 	flag.StringVar(&editName, "edit", "", "Edit an existing profile")
 	flag.StringVar(&delName, "delete", "", "Delete a profile")
 	flag.StringVar(&sftpStartName, "sftp-start", "", "Start SFTP proxy for a profile (usage: qssh --sftp-start <name>)")
@@ -53,7 +65,7 @@ func main() {
 	flag.StringVar(&sftpDaemon, "sftp-daemon", "", "Internal: SFTP proxy worker (profile name)")
 	flag.StringVar(&daemonRunName, "daemon-run", "", "Internal: daemon worker")
 	flag.StringVar(&daemonModeFlag, "daemon-mode", "", "Internal: daemon mode (persistent|managed)")
-	flag.StringVar(&daemonPort, "port", "", "Internal: port")
+	flag.StringVar(&daemonPort, "daemon-port", "", "Internal: port")
 	flag.StringVar(&daemonBind, "bind-addr", "", "Internal: bind address")
 	flag.BoolVar(&doConfig, "config", false, "View or modify config (usage: qssh --config [get|set <key> <value>])")
 	flag.BoolVar(&doList, "list", false, "List profiles (optional: qssh --list filter)")
@@ -82,7 +94,15 @@ func main() {
 	case doConfig:
 		cmd.Config(flag.Args())
 	case addName != "":
-		cmd.Add(addName)
+		cmd.Add(cmd.AddOpts{
+			Name:     addName,
+			Host:     addHost,
+			Port:     addPort,
+			User:     addUser,
+			Auth:     addAuth,
+			Password: addPassword,
+			KeyPath:  addKeyPath,
+		})
 	case editName != "":
 		cmd.Edit(editName)
 	case delName != "":
