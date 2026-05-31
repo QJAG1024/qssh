@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"qssh/internal"
 	"qssh/internal/i18n"
 )
 
-// Delete removes a profile after confirmation.
+// Delete removes a profile.
 func Delete(name string) {
 	s, err := openStore()
 	if err != nil {
@@ -19,11 +18,6 @@ func Delete(name string) {
 	if _, exists := s.Get(name); !exists {
 		fmt.Fprintf(os.Stderr, i18n.T("profile.not_found")+"\n", name)
 		os.Exit(1)
-	}
-
-	if !internal.Confirm(fmt.Sprintf(i18n.T("profile.delete_confirm"), name), false) {
-		fmt.Println(i18n.T("profile.cancelled"))
-		return
 	}
 
 	if err := s.Delete(name); err != nil {
