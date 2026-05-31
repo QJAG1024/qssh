@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/pkg/sftp"
 
@@ -82,6 +83,8 @@ type daemon struct {
 	sftpRunning  bool
 	sftpPort     int
 	sftpListener net.Listener
+	idleTimeout  time.Duration
+	idleTimer    *time.Timer
 }
 
 func (d *daemon) writeJSON(conn net.Conn, resp daemonResp) {
@@ -138,6 +141,18 @@ func RunDaemon(profile string, modeStr string) {
 		activeConns: make(map[string]*connState),
 	}
 
+	if mode == daemonManaged {
+		d.idleTimeout = 5 * time.Minute
+		d.idleTimer = time.AfterFunc(d.idleTimeout, func() {
+			d.mu.Lock()
+			n := len(d.activeConns)
+			d.mu.Unlock()
+			if n == 0 {
+				os.Exit(0)
+			}
+		})
+	}
+
 	connID := 0
 	for {
 		conn, err := listener.Accept()
@@ -159,10 +174,19 @@ func (d *daemon) handleConn(id string, conn net.Conn) {
 	d.activeConns[id] = &connState{pid: pid}
 	d.mu.Unlock()
 
+	if d.mode == daemonManaged && d.idleTimer != nil {
+		d.idleTimer.Stop()
+	}
+
 	defer func() {
 		d.mu.Lock()
 		delete(d.activeConns, id)
+		remaining := len(d.activeConns)
 		d.mu.Unlock()
+
+		if d.mode == daemonManaged && d.idleTimer != nil && remaining == 0 {
+			d.idleTimer.Reset(d.idleTimeout)
+		}
 	}()
 
 	dec := json.NewDecoder(conn)

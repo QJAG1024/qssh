@@ -47,6 +47,10 @@ func StopDaemon(profile string) {
 
 func daemonRunning(profile string) bool { return false }
 
+func startManagedDaemon(profile string) error {
+	return fmt.Errorf("not supported on Windows")
+}
+
 func execViaDaemon(profile, cmd string) (int, error) {
 	return -1, fmt.Errorf("not supported on Windows")
 }

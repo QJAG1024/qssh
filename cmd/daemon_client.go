@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"time"
 )
 
 // daemonRunning checks if a daemon socket exists and responds to ping.
@@ -149,6 +150,21 @@ func StopDaemon(profile string) {
 		os.Exit(1)
 	}
 	fmt.Printf("daemon stopped for %q\n", profile)
+}
+
+// startManagedDaemon forks a managed daemon and waits for it to be ready.
+func startManagedDaemon(profile string) error {
+	if err := forkDaemon(profile, "managed"); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if daemonRunning(profile) {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return fmt.Errorf("daemon did not start within 30s")
 }
 
 // forkDaemon starts a daemon process for the given profile.
