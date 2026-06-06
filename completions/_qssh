@@ -1,13 +1,22 @@
 #compdef qssh
 _qssh() {
   local -a profiles
-  profiles=()
+  profiles=(${(f)"$(_call_program profiles qssh --list 2>/dev/null | tail -n +3 | cut -f1)"})
   _arguments \
     "--add[Create a new profile]:name:" \
-    "--edit[Edit an existing profile]:name:()" \
-    "--delete[Delete a profile]:name:()" \
+    "--edit[Edit an existing profile]:name:(${profiles})" \
+    "--delete[Delete a profile]:name:(${profiles})" \
     "--list[List profiles]:filter:()" \
+    "--exec[Execute a command]:name:(${profiles})" \
+    "--sftp-start[Start SFTP proxy]:name:(${profiles})" \
+    "--sftp-stop[Stop SFTP proxy]:name:(${profiles})" \
+    "--daemon-start[Start daemon]:name:(${profiles})" \
+    "--daemon-stop[Stop daemon]:name:(${profiles})" \
+    "--copy[Copy a profile]:name:(${profiles})" \
+    "--rename[Rename a profile]:name:(${profiles})" \
+    "--history[Show connection history]:name:(${profiles})" \
     "--version[Print version]" \
+    "--proxy[Proxy profile]:name:(${profiles})" \
     "*: :->profile"
   case $state in
     profile)

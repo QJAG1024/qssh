@@ -33,6 +33,10 @@ func main() {
 		addOptionsStr  string
 		editName       string
 		delName        string
+		copyOld        string
+		renameOld      string
+		historyProfile string
+		historyLast    bool
 		sftpStartName  string
 		sftpBind       string
 		sftpStopName   string
@@ -60,6 +64,10 @@ func main() {
 	flag.StringVar(&addOptionsStr, "set-option", "", "Options for --add (comma-separated KEY=VALUE pairs, e.g. ConnectTimeout=30s,SetEnv=LANG=en_US.UTF-8)")
 	flag.StringVar(&editName, "edit", "", "Edit an existing profile")
 	flag.StringVar(&delName, "delete", "", "Delete a profile")
+	flag.StringVar(&copyOld, "copy", "", "Copy a profile (usage: qssh --copy <old-name> <new-name>)")
+	flag.StringVar(&renameOld, "rename", "", "Rename a profile (usage: qssh --rename <old-name> <new-name>)")
+	flag.StringVar(&historyProfile, "history", "", "Show connection history for a profile")
+	flag.BoolVar(&historyLast, "last", false, "Show only the last connection (use with --history)")
 	flag.StringVar(&sftpStartName, "sftp-start", "", "Start SFTP proxy for a profile (usage: qssh --sftp-start <name>)")
 	flag.StringVar(&sftpBind, "bind", "", "Bind address for SFTP proxy (default: 127.0.0.1)")
 	flag.StringVar(&sftpStopName, "sftp-stop", "", "Stop SFTP proxy for a profile (usage: qssh --sftp-stop <name>)")
@@ -125,6 +133,22 @@ func main() {
 		cmd.Edit(editName, editOpts)
 	case delName != "":
 		cmd.Delete(delName)
+	case copyOld != "":
+		newName := flag.Arg(0)
+		if newName == "" {
+			fmt.Fprintln(os.Stderr, "usage: qssh --copy <old-name> <new-name>")
+			os.Exit(1)
+		}
+		cmd.Copy(copyOld, newName)
+	case renameOld != "":
+		newName := flag.Arg(0)
+		if newName == "" {
+			fmt.Fprintln(os.Stderr, "usage: qssh --rename <old-name> <new-name>")
+			os.Exit(1)
+		}
+		cmd.Rename(renameOld, newName)
+	case historyProfile != "" || historyLast:
+		cmd.History(historyProfile, historyLast)
 	case execName != "":
 		if flag.NArg() == 0 {
 			fmt.Fprintln(os.Stderr, "error: --exec requires a command")
