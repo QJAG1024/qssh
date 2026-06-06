@@ -90,7 +90,7 @@ func Add(opts AddOpts) {
 		if opts.Password != "" {
 			p.Password = opts.Password
 		} else if nonInteractive {
-			fmt.Fprintln(os.Stderr, "password is required for password auth")
+			fmt.Fprintln(os.Stderr, i18n.T("add.required_password"))
 			os.Exit(1)
 		} else {
 			pass, err := internal.ReadPassword("Password")
@@ -105,7 +105,7 @@ func Add(opts AddOpts) {
 		if opts.KeyPath != "" {
 			p.KeyPath = opts.KeyPath
 		} else if nonInteractive {
-			fmt.Fprintln(os.Stderr, "--key-path is required for key auth")
+			fmt.Fprintln(os.Stderr, i18n.T("add.required_keypath"))
 			os.Exit(1)
 		} else {
 			p.KeyPath = internal.Prompt("Key path", "~/.ssh/id_ed25519")
