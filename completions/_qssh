@@ -1,7 +1,7 @@
 #compdef qssh
 _qssh() {
   local -a profiles
-  profiles=(${(f)"$(_call_program profiles qssh --list 2>/dev/null | tail -n +3 | cut -f1)"})
+  profiles=(${(f)"$(_call_program profiles qssh --list 2>/dev/null | tail -n +3 | awk 'NF{print \$1}')"})
   _arguments \
     "--add[Create a new profile]:name:" \
     "--edit[Edit an existing profile]:name:(${profiles})" \

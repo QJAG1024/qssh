@@ -3,7 +3,7 @@
 # install: cp completions/qssh.fish ~/.config/fish/completions/
 
 function __qssh_profiles
-    qssh --list 2>/dev/null | string match -r '^[^\t]+' | tail -n +3 | string trim
+    command qssh --list 2>/dev/null | tail -n +3 | awk 'NF{print $1}'
 end
 
 complete -c qssh -f

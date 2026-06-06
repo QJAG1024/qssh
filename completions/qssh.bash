@@ -4,7 +4,7 @@ _qssh() {
   _init_completion || return
 
   local profiles
-  profiles=$(qssh --list 2>/dev/null | tail -n +3 | cut -f1 | tr '\n' ' ')
+  profiles=$(qssh --list 2>/dev/null | tail -n +3 | awk 'NF{print $1}' | tr '\n' ' ')
 
   case $prev in
     --edit|--delete|--exec|--sftp-start|--sftp-stop|--daemon-start|--daemon-stop)
