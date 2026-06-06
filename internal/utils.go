@@ -88,6 +88,7 @@ const (
 	StepTCPConnect
 	StepSSHHandshake // version + key exchange + host key verify
 	StepAuthenticate
+	StepProxyConnect // connecting through a jump host
 	StepAllocatePTY
 	StepShellStart
 )
@@ -102,6 +103,8 @@ func (s StepID) String() string {
 		return "tcp_connect"
 	case StepSSHHandshake:
 		return "ssh_handshake"
+	case StepProxyConnect:
+		return "proxy_connect"
 	case StepAuthenticate:
 		return "authenticate"
 	case StepAllocatePTY:

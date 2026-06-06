@@ -16,6 +16,8 @@ import (
 type AddOpts struct {
 	Name, Host, User, Auth, Password, KeyPath string
 	Port                                     int
+	Proxy                                    string
+	Options                                  map[string]string
 }
 
 // Add creates a new SSH credential profile.
@@ -119,6 +121,17 @@ func Add(opts AddOpts) {
 		os.Exit(1)
 	}
 
+	if opts.Options != nil {
+		if p.Options == nil {
+			p.Options = make(map[string]string, len(opts.Options))
+		}
+		for k, v := range opts.Options {
+			p.Options[k] = v
+		}
+	}
+	if opts.Proxy != "" {
+		p.Proxy = opts.Proxy
+	}
 	p.SetDefaults()
 	if err := s.Add(p); err != nil {
 		fmt.Fprintf(os.Stderr, i18n.T("profile.save_error")+"\n", err)

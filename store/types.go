@@ -38,6 +38,13 @@ type Profile struct {
 	KeyPath       string `json:"key_path,omitempty"`
 	KeyPassphrase string `json:"key_passphrase,omitempty"`
 
+	// Proxy is the name of another profile to use as a jump host.
+	// When set, the connection is tunneled through the proxy host.
+	Proxy string `json:"proxy,omitempty"`
+
+	// Options holds per-profile SSH options (ConnectTimeout, SetEnv, etc.).
+	Options map[string]string `json:"options,omitempty"`
+
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 	LastUsed        time.Time `json:"last_used,omitempty"`
@@ -92,6 +99,12 @@ func (p *Profile) Copy() Profile {
 	if p.Tags != nil {
 		c.Tags = make([]string, len(p.Tags))
 		copy(c.Tags, p.Tags)
+	}
+	if p.Options != nil {
+		c.Options = make(map[string]string, len(p.Options))
+		for k, v := range p.Options {
+			c.Options[k] = v
+		}
 	}
 	return c
 }

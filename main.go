@@ -29,6 +29,8 @@ func main() {
 		addAuth        string
 		addPassword    string
 		addKeyPath     string
+		addProxy       string
+		addOptionsStr  string
 		editName       string
 		delName        string
 		sftpStartName  string
@@ -54,6 +56,8 @@ func main() {
 	flag.StringVar(&addAuth, "auth", "", "Auth method for --add (password/key/agent/keyboard-interactive)")
 	flag.StringVar(&addPassword, "password", "", "Password for --add")
 	flag.StringVar(&addKeyPath, "key-path", "", "Key path for --add (used with --auth key)")
+	flag.StringVar(&addProxy, "proxy", "", "Proxy profile name for --add or --edit")
+	flag.StringVar(&addOptionsStr, "set-option", "", "Options for --add (comma-separated KEY=VALUE pairs, e.g. ConnectTimeout=30s,SetEnv=LANG=en_US.UTF-8)")
 	flag.StringVar(&editName, "edit", "", "Edit an existing profile")
 	flag.StringVar(&delName, "delete", "", "Delete a profile")
 	flag.StringVar(&sftpStartName, "sftp-start", "", "Start SFTP proxy for a profile (usage: qssh --sftp-start <name>)")
@@ -74,6 +78,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, i18n.T("usage.text"), version)
 	}
 	flag.Parse()
+
+	optsMap := parseOptionsString(addOptionsStr)
 
 	switch {
 	case showVer:
@@ -102,9 +108,21 @@ func main() {
 			Auth:     addAuth,
 			Password: addPassword,
 			KeyPath:  addKeyPath,
+			Proxy:    addProxy,
+			Options:  optsMap,
 		})
 	case editName != "":
-		cmd.Edit(editName)
+		editOpts := cmd.AddOpts{
+			Host:     addHost,
+			Port:     addPort,
+			User:     addUser,
+			Auth:     addAuth,
+			Password: addPassword,
+			KeyPath:  addKeyPath,
+			Proxy:    addProxy,
+			Options:  optsMap,
+		}
+		cmd.Edit(editName, editOpts)
 	case delName != "":
 		cmd.Delete(delName)
 	case execName != "":
@@ -141,3 +159,27 @@ func main() {
 }
 
 func connectCmd(name string) { cmd.Connect(name) }
+
+// parseOptionsString parses a comma-separated KEY=VALUE string into a map.
+func parseOptionsString(s string) map[string]string {
+	if s == "" {
+		return nil
+	}
+	m := make(map[string]string)
+	for _, pair := range strings.Split(s, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		kv := strings.SplitN(pair, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(kv[0])
+		val := strings.TrimSpace(kv[1])
+		if key != "" {
+			m[key] = val
+		}
+	}
+	return m
+}

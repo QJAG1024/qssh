@@ -12,7 +12,8 @@ var zhCN = map[string]string{
 	"step.authenticate":     "认证",
 	"step.allocate_pty":     "PTY 分配",
 	"step.shell_start":      "启动 Shell",
-	"step.unknown":          "未知步骤",
+	"step.proxy_connect":   "代理连接",
+		"step.unknown":          "未知步骤",
 
 	// Session progress messages
 	"profile.loaded":        "配置已加载",
@@ -52,6 +53,21 @@ var zhCN = map[string]string{
 	"password.new_prompt":   "新密码",
 	"profile.save_error":    "保存配置失败: %v",
 
+	// Proxy / Jump host
+	"proxy.connecting": "正在连接跳板机 %s...",
+	"proxy.tunneling":  "通过 %s 隧道至 %s",
+	"proxy.handshake":  "通过 %s 进行目标 SSH 握手",
+
+	// Connection history
+	"history.header":     "%s 的连接历史",
+	"history.header_all": "连接历史",
+	"history.time":       "时间",
+	"history.duration":   "耗时",
+	"history.command":    "命令",
+	"history.exit":       "退出码",
+	"history.empty":      "没有找到记录。",
+	"history.empty_all":  "没有找到连接记录。",
+
 	// Connection
 	"connect.failed":        "连接失败",
 	"connect.ended":         "会话结束: %v",
@@ -89,6 +105,7 @@ var zhCN = map[string]string{
 	"list.header.auth":      "认证",
 	"list.header.last_used": "上次使用",
 	"list.header.count":     "次数",
+		"list.header.proxy":     "跳板",
 
 	// Time
 	"time.just_now":         "刚刚",
@@ -103,12 +120,15 @@ var zhCN = map[string]string{
   qssh --add <name>                 创建新配置
   qssh --edit <name>                编辑已有配置
   qssh --list [filter]              列出配置（可选子串过滤）
+  qssh --copy <old> <new>           复制配置
+  qssh --rename <old> <new>         重命名配置
   qssh --delete <name>              删除配置
   qssh --exec <profile> <command>   在配置上执行命令
   qssh --sftp-start <name>          启动 SFTP 代理
   qssh --sftp-stop <name>           停止 SFTP 代理
   qssh --daemon-start <name>        启动后台守护进程
   qssh --daemon-stop <name>         停止后台守护进程
+  qssh --history [name]             查看连接历史
   qssh --config [get|set ...]       查看或修改设置
   qssh --version                    显示版本`,
 }

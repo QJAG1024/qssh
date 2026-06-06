@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -62,22 +63,29 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 	})
 
 	// Host key callback
-	hkCallback, err := hostKeyCallback(p.Host, addr)
+	hkCallback, err := HostKeyCallback(p.Host, addr)
 	if err != nil {
 		return nil, fmt.Errorf("host key callback: %w", err)
 	}
 
 	// Auth methods
-	authMethods, err := authMethodsForProfile(p)
+	authMethods, err := AuthMethodsForProfile(p)
 	if err != nil {
 		return nil, fmt.Errorf("auth method: %w", err)
+	}
+
+	timeout := 10 * time.Second
+	if v, ok := p.Options["ConnectTimeout"]; ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			timeout = d
+		}
 	}
 
 	config := &ssh.ClientConfig{
 		User:            p.User,
 		Auth:            authMethods,
 		HostKeyCallback: hkCallback,
-		Timeout:         10 * time.Second,
+		Timeout:         timeout,
 	}
 
 	// TCP + SSH handshake
@@ -151,10 +159,17 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 		}
 	}
 
-	// Request PTY
+	// Request PTY — prefer the local TERM, but fall back to a widely
+	// available entry so remote systems with a minimal terminfo database
+	// (e.g. Debian/PVE) don't complain about a missing one.
 	termEnv := os.Getenv("TERM")
-	if termEnv == "" {
-		termEnv = "xterm-256color"
+	switch termEnv {
+	case "xterm", "linux", "vt100":
+		// in ncurses-base, available everywhere
+	default:
+		// xterm-256color is in ncurses-term (not guaranteed),
+		// xterm is in ncurses-base and always present.
+		termEnv = "xterm"
 	}
 	modes := ssh.TerminalModes{
 		ssh.ECHO:          1,
@@ -180,6 +195,9 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 	sshSesh.Stdin = stdin
 	sshSesh.Stdout = stdout
 	sshSesh.Stderr = stderr
+
+	// Apply SetEnv options
+	setSessionEnv(sshSesh, s.profile)
 
 	// Start shell
 	progress(internal.StepResult{
@@ -240,6 +258,90 @@ func (s *Session) Client() *ssh.Client {
 	return s.client
 }
 
+// setSessionEnv applies SetEnv options from the profile to an SSH session.
+func setSessionEnv(sshSesh *ssh.Session, p store.Profile) {
+	if env, ok := p.Options["SetEnv"]; ok && env != "" {
+		// Support comma-separated KEY=VALUE pairs
+		for _, pair := range strings.Split(env, ",") {
+			pair = strings.TrimSpace(pair)
+			if pair == "" {
+				continue
+			}
+			kv := strings.SplitN(pair, "=", 2)
+			if len(kv) != 2 {
+				continue
+			}
+			key, val := strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1])
+			if key != "" {
+				_ = sshSesh.Setenv(key, val) // best effort; server may reject
+			}
+		}
+	}
+}
+
+// DialViaProxy establishes an SSH connection through a jump host.
+// proxyClient is an already-connected SSH client to the jump host.
+// target is the address of the final host (host:port).
+func DialViaProxy(p store.Profile, proxyClient *ssh.Client, targetAddr string, progress internal.ProgressFn) (*Session, error) {
+	if progress == nil {
+		progress = internal.NopProgress
+	}
+
+	progress(internal.StepResult{
+		ID: internal.StepDecrypt, Status: internal.StepDone,
+		Message: i18n.T("profile.loaded"),
+	})
+
+	// Host key callback
+	hkCallback, err := HostKeyCallback(p.Host, targetAddr)
+	if err != nil {
+		return nil, fmt.Errorf("host key callback: %w", err)
+	}
+
+	authMethods, err := AuthMethodsForProfile(p)
+	if err != nil {
+		return nil, fmt.Errorf("auth method: %w", err)
+	}
+
+	timeout := 10 * time.Second
+	if v, ok := p.Options["ConnectTimeout"]; ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			timeout = d
+		}
+	}
+
+	config := &ssh.ClientConfig{
+		User:            p.User,
+		Auth:            authMethods,
+		HostKeyCallback: hkCallback,
+		Timeout:         timeout,
+	}
+
+	progress(internal.StepResult{
+		ID: internal.StepProxyConnect, Status: internal.StepRunning,
+		Message: i18n.T("proxy.tunneling", proxyClient.RemoteAddr().String(), targetAddr),
+	})
+
+	proxyConn, err := proxyClient.Dial("tcp", targetAddr)
+	if err != nil {
+		return nil, fmt.Errorf("proxy tunnel: %w", err)
+	}
+
+	sshConn, chans, reqs, err := ssh.NewClientConn(proxyConn, targetAddr, config)
+	if err != nil {
+		proxyConn.Close()
+		return nil, fmt.Errorf("target handshake via proxy: %w", err)
+	}
+
+	progress(internal.StepResult{
+		ID: internal.StepProxyConnect, Status: internal.StepDone,
+		Message: i18n.T("proxy.handshake", proxyClient.RemoteAddr().String()),
+	})
+
+	client := ssh.NewClient(sshConn, chans, reqs)
+	return &Session{client: client, profile: p}, nil
+}
+
 // Close terminates the SSH connection.
 func (s *Session) Close() error {
 	if s.sshSession != nil {
@@ -248,8 +350,8 @@ func (s *Session) Close() error {
 	return s.client.Close()
 }
 
-// authMethodsForProfile converts a Profile into SSH auth methods.
-func authMethodsForProfile(p store.Profile) ([]ssh.AuthMethod, error) {
+// AuthMethodsForProfile converts a Profile into SSH auth methods.
+func AuthMethodsForProfile(p store.Profile) ([]ssh.AuthMethod, error) {
 	switch p.Auth {
 	case store.AuthPassword:
 		return []ssh.AuthMethod{ssh.Password(p.Password)}, nil
@@ -305,9 +407,9 @@ func authMethodsForProfile(p store.Profile) ([]ssh.AuthMethod, error) {
 	}
 }
 
-// hostKeyCallback returns an ssh.HostKeyCallback that uses a known_hosts file
+// HostKeyCallback returns an ssh.HostKeyCallback that uses a known_hosts file
 // with "accept on first use" semantics (like OpenSSH).
-func hostKeyCallback(_, addr string) (ssh.HostKeyCallback, error) {
+func HostKeyCallback(_, addr string) (ssh.HostKeyCallback, error) {
 	khPath := knownHostsFile()
 	os.MkdirAll(filepath.Dir(khPath), 0700)
 
@@ -411,6 +513,8 @@ func (s *Session) RunCommand(cmd string, stdin io.Reader, stdout, stderr io.Writ
 	sshSesh.Stdin = stdin
 	sshSesh.Stdout = stdout
 	sshSesh.Stderr = stderr
+
+	setSessionEnv(sshSesh, s.profile)
 
 	if err := sshSesh.Run(cmd); err != nil {
 		if exitErr, ok := err.(*ssh.ExitError); ok {

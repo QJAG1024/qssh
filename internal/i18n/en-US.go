@@ -12,7 +12,8 @@ var enUS = map[string]string{
 	"step.authenticate":     "Authenticate",
 	"step.allocate_pty":     "Allocate PTY",
 	"step.shell_start":      "Start shell",
-	"step.unknown":          "Unknown step",
+	"step.proxy_connect":   "Proxy connect",
+		"step.unknown":          "Unknown step",
 
 	// Session progress messages
 	"profile.loaded":        "Profile loaded",
@@ -52,6 +53,21 @@ var enUS = map[string]string{
 	"password.new_prompt":   "New password",
 	"profile.save_error":    "Error saving profile: %v",
 
+	// Proxy / Jump host
+	"proxy.connecting": "Connecting to jump host %s...",
+	"proxy.tunneling":  "Tunneling through %s to %s",
+	"proxy.handshake":  "SSH handshake with target via %s",
+
+	// Connection history
+	"history.header":     "Connection History for %s",
+	"history.header_all": "Connection History",
+	"history.time":       "Time",
+	"history.duration":   "Duration",
+	"history.command":    "Command",
+	"history.exit":       "Exit Code",
+	"history.empty":      "No history found.",
+	"history.empty_all":  "No connection history found.",
+
 	// Connection
 	"connect.failed":        "Connection failed.",
 	"connect.ended":         "Session ended: %v",
@@ -89,6 +105,7 @@ var enUS = map[string]string{
 	"list.header.auth":      "Auth",
 	"list.header.last_used": "Last Used",
 	"list.header.count":     "Count",
+		"list.header.proxy":     "Proxy",
 
 	// Time
 	"time.just_now":         "just now",
@@ -103,12 +120,15 @@ Usage:
   qssh --add <name>                 Create a new profile
   qssh --edit <name>                Edit an existing profile
   qssh --list [filter]              List profiles (optional substring filter)
+  qssh --copy <old> <new>           Copy a profile
+  qssh --rename <old> <new>         Rename a profile
   qssh --delete <name>              Delete a profile
   qssh --exec <profile> <command>   Execute a command on a profile
   qssh --sftp-start <name>          Start SFTP proxy for a profile
   qssh --sftp-stop <name>           Stop SFTP proxy for a profile
   qssh --daemon-start <name>        Start background daemon
   qssh --daemon-stop <name>         Stop background daemon
+  qssh --history [name]             Show connection history
   qssh --config [get|set ...]       View or modify config
   qssh --version                    Print version`,
 }

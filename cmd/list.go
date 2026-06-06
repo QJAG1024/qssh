@@ -42,16 +42,20 @@ func List(filter string) {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, i18n.T("list.header.name")+"\t"+i18n.T("list.header.host")+"\t"+i18n.T("list.header.port")+"\t"+i18n.T("list.header.user")+"\t"+i18n.T("list.header.auth")+"\t"+i18n.T("list.header.last_used")+"\t"+i18n.T("list.header.count"))
-	fmt.Fprintln(w, "----\t----\t----\t----\t----\t---------\t-----")
+	fmt.Fprintln(w, i18n.T("list.header.name")+"\t"+i18n.T("list.header.host")+"\t"+i18n.T("list.header.port")+"\t"+i18n.T("list.header.user")+"\t"+i18n.T("list.header.auth")+"\t"+i18n.T("list.header.last_used")+"\t"+i18n.T("list.header.count")+"\t"+i18n.T("list.header.proxy"))
+	fmt.Fprintln(w, "----\t----\t----\t----\t----\t---------\t-----\t-----")
 
 	for _, p := range profiles {
 		lastUsed := "-"
 		if !p.LastUsed.IsZero() {
 			lastUsed = formatTimeAgo(p.LastUsed)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\n",
-			p.Name, p.Host, p.Port, p.User, p.Auth, lastUsed, p.ConnectionCount)
+		proxy := "-"
+		if p.Proxy != "" {
+			proxy = p.Proxy
+		}
+		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\t%s\n",
+			p.Name, p.Host, p.Port, p.User, p.Auth, lastUsed, p.ConnectionCount, proxy)
 	}
 	w.Flush()
 }
