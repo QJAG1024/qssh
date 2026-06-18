@@ -10,8 +10,7 @@ func TestKeyring_FileBased(t *testing.T) {
 	dir := t.TempDir()
 	keyPath := filepath.Join(dir, "store.key")
 
-	// Create keyring with file fallback only (no secret-tool).
-	kr := &Keyring{fallbackPath: keyPath}
+	kr := New(keyPath, BackendFile)
 
 	// First call: should generate and store a new key.
 	key1, err := kr.Get()
@@ -28,7 +27,7 @@ func TestKeyring_FileBased(t *testing.T) {
 	}
 
 	// Second call: should read the same key back.
-	kr2 := &Keyring{fallbackPath: keyPath}
+	kr2 := New(keyPath, BackendFile)
 	key2, err := kr2.Get()
 	if err != nil {
 		t.Fatalf("second Get: %v", err)
@@ -46,8 +45,8 @@ func TestKeyring_FileBased(t *testing.T) {
 func TestKeyring_GenerateUniqueKeys(t *testing.T) {
 	dir := t.TempDir()
 
-	kr1 := &Keyring{fallbackPath: filepath.Join(dir, "k1")}
-	kr2 := &Keyring{fallbackPath: filepath.Join(dir, "k2")}
+	kr1 := New(filepath.Join(dir, "k1"), BackendFile)
+	kr2 := New(filepath.Join(dir, "k2"), BackendFile)
 
 	k1, _ := kr1.Get()
 	k2, _ := kr2.Get()
@@ -72,7 +71,7 @@ func TestKeyring_InvalidHexFile(t *testing.T) {
 	// Write invalid hex to the key file.
 	os.WriteFile(keyPath, []byte("not-hex\n"), 0600)
 
-	kr := &Keyring{fallbackPath: keyPath}
+	kr := New(keyPath, BackendFile)
 	_, err := kr.Get()
 	if err == nil {
 		t.Fatal("expected error for invalid hex, got nil")

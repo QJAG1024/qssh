@@ -10,45 +10,89 @@ import (
 	"strings"
 )
 
+// Backend selects the key storage backend.
+type Backend string
+
+const (
+	BackendKeyring Backend = "keyring"
+	BackendFile    Backend = "file"
+)
+
 // Keyring manages the 32-byte AES encryption master key.
-// Uses GNOME keyring (secret-tool) when available,
-// falls back to a file-based key at fallbackPath.
+// Uses GNOME keyring (secret-tool) when backend is BackendKeyring,
+// otherwise uses a file-based key at fallbackPath.
 type Keyring struct {
-	fallbackPath string
+	fallbackPath  string
+	backend       Backend
 	useSecretTool bool
 }
 
-// New creates a Keyring. If secret-tool is found on $PATH,
-// it uses the system keyring; otherwise falls back to a file.
-func New(fallbackPath string) *Keyring {
-	kr := &Keyring{fallbackPath: fallbackPath}
-	if _, err := exec.LookPath("secret-tool"); err == nil {
-		kr.useSecretTool = true
+// New creates a Keyring with the given backend.
+//   - BackendKeyring: uses secret-tool (GNOME Keyring); errors if not found.
+//   - BackendFile: uses a file at fallbackPath.
+func New(fallbackPath string, backend Backend) *Keyring {
+	kr := &Keyring{fallbackPath: fallbackPath, backend: backend}
+	if backend == BackendKeyring {
+		_, err := exec.LookPath("secret-tool")
+		kr.useSecretTool = err == nil
 	}
 	return kr
 }
 
 // Get retrieves the 32-byte encryption key.
-// It tries keyring first, then fallback file.
-// If neither exists, it generates a new key and stores it.
+// If the active backend doesn't have one yet, it tries to migrate from the
+// other backend before generating a fresh key.
 func (k *Keyring) Get() ([]byte, error) {
-	if k.useSecretTool {
-		key, err := k.getFromSecretTool()
-		if err == nil {
-			return key, nil
-		}
-		// Key not in keyring — generate and store
-		key, err = k.generate()
-		if err != nil {
-			return nil, fmt.Errorf("generate key: %w", err)
-		}
-		if err := k.setInSecretTool(key); err != nil {
-			return nil, fmt.Errorf("store key in keyring: %w", err)
-		}
+	switch k.backend {
+	case BackendKeyring:
+		return k.getWithKeyring()
+	default:
+		return k.getWithFile()
+	}
+}
+
+// getWithKeyring uses secret-tool, with file-based migration fallback.
+func (k *Keyring) getWithKeyring() ([]byte, error) {
+	if !k.useSecretTool {
+		return nil, fmt.Errorf("secret-tool not available (set store.backend to \"file\" to use file-based key storage)")
+	}
+
+	key, err := k.getFromSecretTool()
+	if err == nil {
 		return key, nil
 	}
 
-	// File-based fallback
+	// Not in keyring — try file (migration from old file-based setup).
+	key, err = k.getFromFile()
+	if err == nil {
+		// Store into keyring for next time.
+		if setErr := k.setInSecretTool(key); setErr == nil {
+			return key, nil
+		}
+		// keyring broken despite probe passing? keep using file silently.
+		return key, nil
+	}
+	if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read key file: %w", err)
+	}
+
+	// No key anywhere — generate fresh.
+	key, err = k.generate()
+	if err != nil {
+		return nil, fmt.Errorf("generate key: %w", err)
+	}
+	if err := k.setInSecretTool(key); err != nil {
+		// keyring daemon unreachable — fall back to file.
+		if ferr := k.setInFile(key); ferr != nil {
+			return nil, fmt.Errorf("store key: secret-tool: %w (file fallback: %v)", err, ferr)
+		}
+		return key, nil
+	}
+	return key, nil
+}
+
+// getWithFile uses a file, with secret-tool migration fallback.
+func (k *Keyring) getWithFile() ([]byte, error) {
 	key, err := k.getFromFile()
 	if err == nil {
 		return key, nil
@@ -56,7 +100,19 @@ func (k *Keyring) Get() ([]byte, error) {
 	if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("read key file: %w", err)
 	}
-	// File doesn't exist — generate and store
+
+	// Not in file — try secret-tool (migration from keyring).
+	if k.useSecretTool {
+		key, err = k.getFromSecretTool()
+		if err == nil {
+			if setErr := k.setInFile(key); setErr == nil {
+				return key, nil
+			}
+			return key, nil
+		}
+	}
+
+	// No key anywhere — generate fresh.
 	key, err = k.generate()
 	if err != nil {
 		return nil, fmt.Errorf("generate key: %w", err)

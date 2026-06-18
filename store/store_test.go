@@ -14,7 +14,7 @@ func newTestStore(t *testing.T) (*Store, string) {
 	dir := t.TempDir()
 	keyPath := filepath.Join(dir, "store.key")
 	storePath := filepath.Join(dir, "store.json")
-	kr := keyring.New(keyPath)
+	kr := keyring.New(keyPath, keyring.BackendFile)
 	s, err := New(storePath, kr)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -150,7 +150,7 @@ func TestStore_Persistence(t *testing.T) {
 	keyPath := filepath.Join(dir, "store.key")
 	storePath := filepath.Join(dir, "store.json")
 
-	kr := keyring.New(keyPath)
+	kr := keyring.New(keyPath, keyring.BackendFile)
 	s1, err := New(storePath, kr)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -158,7 +158,7 @@ func TestStore_Persistence(t *testing.T) {
 	s1.Add(Profile{Name: "persist-test", Host: "10.0.0.1", Port: 22, User: "root", Auth: AuthPassword, Password: "secret"})
 
 	// Open a new store instance pointing at the same file.
-	kr2 := keyring.New(keyPath)
+	kr2 := keyring.New(keyPath, keyring.BackendFile)
 	s2, err := New(storePath, kr2)
 	if err != nil {
 		t.Fatalf("New second instance: %v", err)
@@ -227,14 +227,14 @@ func TestStore_CorruptedFile(t *testing.T) {
 	keyPath := filepath.Join(dir, "store.key")
 	storePath := filepath.Join(dir, "store.json")
 
-	kr := keyring.New(keyPath)
+	kr := keyring.New(keyPath, keyring.BackendFile)
 	s, _ := New(storePath, kr)
 	s.Add(Profile{Name: "x", Host: "h", Port: 22, User: "u", Auth: AuthPassword, Password: "p"})
 
 	// Corrupt the file.
 	os.WriteFile(storePath, []byte("garbage"), 0600)
 
-	kr2 := keyring.New(keyPath)
+	kr2 := keyring.New(keyPath, keyring.BackendFile)
 	_, err := New(storePath, kr2)
 	if err == nil {
 		t.Fatal("expected error for corrupted file")
