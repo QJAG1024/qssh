@@ -169,9 +169,12 @@ func startManagedDaemon(profile string) error {
 
 // forkDaemon starts a daemon process for the given profile.
 func forkDaemon(profile string, mode string) error {
-	cmd := os.Args[0]
-	proc, err := os.StartProcess(cmd, []string{
-		cmd, "--daemon-run", profile, "--daemon-mode", string(mode),
+	exe, err := os.Executable()
+	if err != nil {
+		exe = os.Args[0]
+	}
+	proc, err := os.StartProcess(exe, []string{
+		exe, "--daemon-run", profile, "--daemon-mode", string(mode),
 	}, &os.ProcAttr{
 		Files: []*os.File{nil, nil, nil},
 	})
