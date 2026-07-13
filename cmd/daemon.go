@@ -127,13 +127,20 @@ func RunDaemon(profile string, modeStr string) {
 		fmt.Fprintf(os.Stderr, "listen: %v\n", err)
 		os.Exit(1)
 	}
+	// Restrict the control socket to the owning user only.
+	if err := os.Chmod(sockPath, 0600); err != nil {
+		listener.Close()
+		os.Remove(sockPath)
+		fmt.Fprintf(os.Stderr, "chmod socket: %v\n", err)
+		os.Exit(1)
+	}
 	defer func() {
 		listener.Close()
 		os.Remove(sockPath)
 		os.Remove(daemonPidPath(profile))
 	}()
 
-	os.WriteFile(daemonPidPath(profile), []byte(fmt.Sprintf("%d", os.Getpid())), 0644)
+	os.WriteFile(daemonPidPath(profile), []byte(fmt.Sprintf("%d", os.Getpid())), 0600)
 
 	d := &daemon{
 		profile:     profile,
@@ -159,6 +166,10 @@ func RunDaemon(profile string, modeStr string) {
 		conn, err := listener.Accept()
 		if err != nil {
 			return
+		}
+		if err := authorizePeer(conn); err != nil {
+			conn.Close()
+			continue
 		}
 		id := fmt.Sprintf("conn-%d", connID)
 		connID++
