@@ -22,10 +22,16 @@ import (
 
 // Session wraps an SSH connection with PTY management.
 type Session struct {
-	client    *ssh.Client
+	client     *ssh.Client
 	sshSession *ssh.Session
-	profile   store.Profile
+	profile    store.Profile
+	// hops holds intermediate jump-host clients that must stay open for the
+	// final tunnel to work. Closed (outermost first) after the final client.
+	hops []*ssh.Client
 }
+
+// ProfileLookup resolves a profile by name (used for jump-host chains).
+type ProfileLookup func(name string) (store.Profile, bool)
 
 // Dial establishes an SSH connection using the given profile.
 // Reports progress via the callback.
@@ -282,7 +288,9 @@ func setSessionEnv(sshSesh *ssh.Session, p store.Profile) {
 // DialViaProxy establishes an SSH connection through a jump host.
 // proxyClient is an already-connected SSH client to the jump host.
 // target is the address of the final host (host:port).
-func DialViaProxy(p store.Profile, proxyClient *ssh.Client, targetAddr string, progress internal.ProgressFn) (*Session, error) {
+// hops are intermediate clients that must remain open; ownership transfers to
+// the returned Session and they are closed with it.
+func DialViaProxy(p store.Profile, proxyClient *ssh.Client, targetAddr string, progress internal.ProgressFn, hops ...*ssh.Client) (*Session, error) {
 	if progress == nil {
 		progress = internal.NopProgress
 	}
@@ -339,15 +347,141 @@ func DialViaProxy(p store.Profile, proxyClient *ssh.Client, targetAddr string, p
 	})
 
 	client := ssh.NewClient(sshConn, chans, reqs)
-	return &Session{client: client, profile: p}, nil
+	return &Session{client: client, profile: p, hops: hops}, nil
 }
 
-// Close terminates the SSH connection.
+// DialProfile dials a profile, following any Proxy jump-host chain via lookup.
+// This is the single entry point for connect, daemon, and SFTP paths.
+func DialProfile(p store.Profile, lookup ProfileLookup, progress internal.ProgressFn) (*Session, error) {
+	if progress == nil {
+		progress = internal.NopProgress
+	}
+	if p.Proxy == "" {
+		return Dial(p, progress)
+	}
+	if lookup == nil {
+		return nil, fmt.Errorf("profile %q requires proxy %q but no profile lookup provided", p.Name, p.Proxy)
+	}
+	return dialViaProxyChain(p, lookup, progress)
+}
+
+// dialViaProxyChain walks the proxy chain and tunnels through each hop.
+// chain order is [innermostProxy, ..., outermostProxy].
+func dialViaProxyChain(p store.Profile, lookup ProfileLookup, progress internal.ProgressFn) (*Session, error) {
+	chain, err := buildProxyChain(p, lookup)
+	if err != nil {
+		return nil, err
+	}
+
+	// Dial the outermost proxy directly.
+	last := chain[len(chain)-1]
+	progress(internal.StepResult{
+		ID: internal.StepProxyConnect, Status: internal.StepRunning,
+		Message: i18n.T("proxy.connecting", last.Name),
+	})
+	outer, err := Dial(last, progress)
+	if err != nil {
+		return nil, fmt.Errorf("proxy %s: %w", last.Name, err)
+	}
+
+	// hops[0] is outermost; keep every hop client alive until final Close.
+	hops := []*ssh.Client{outer.Client()}
+	proxyClient := outer.Client()
+
+	// Walk inner proxies, tunneling through each.
+	for i := len(chain) - 2; i >= 0; i-- {
+		target := chain[i]
+		addr := net.JoinHostPort(target.Host, fmt.Sprintf("%d", target.Port))
+		progress(internal.StepResult{
+			ID: internal.StepProxyConnect, Status: internal.StepRunning,
+			Message: i18n.T("proxy.tunneling", proxyClient.RemoteAddr().String(), addr),
+		})
+		tunnel, err := proxyClient.Dial("tcp", addr)
+		if err != nil {
+			closeHops(hops)
+			return nil, fmt.Errorf("proxy tunnel to %s: %w", target.Name, err)
+		}
+		sshConn, chans, reqs, err := newClientConn(tunnel, addr, target)
+		if err != nil {
+			tunnel.Close()
+			closeHops(hops)
+			return nil, fmt.Errorf("proxy handshake %s: %w", target.Name, err)
+		}
+		proxyClient = ssh.NewClient(sshConn, chans, reqs)
+		hops = append(hops, proxyClient)
+	}
+
+	// Tunnel from innermost proxy to final target.
+	targetAddr := net.JoinHostPort(p.Host, fmt.Sprintf("%d", p.Port))
+	session, err := DialViaProxy(p, proxyClient, targetAddr, progress, hops...)
+	if err != nil {
+		closeHops(hops)
+		return nil, err
+	}
+	return session, nil
+}
+
+// buildProxyChain resolves the proxy chain from innermost to outermost.
+func buildProxyChain(p store.Profile, lookup ProfileLookup) ([]store.Profile, error) {
+	seen := map[string]bool{p.Name: true}
+	chain := make([]store.Profile, 0)
+	cur := p
+	for cur.Proxy != "" {
+		if seen[cur.Proxy] {
+			return nil, fmt.Errorf("proxy cycle detected: %s -> %s", cur.Name, cur.Proxy)
+		}
+		seen[cur.Proxy] = true
+		pp, exists := lookup(cur.Proxy)
+		if !exists {
+			return nil, fmt.Errorf("proxy profile %q not found", cur.Proxy)
+		}
+		chain = append(chain, pp)
+		cur = pp
+	}
+	if len(chain) == 0 {
+		return nil, fmt.Errorf("empty proxy chain for %q", p.Name)
+	}
+	return chain, nil
+}
+
+// newClientConn performs an SSH handshake over an existing net.Conn.
+func newClientConn(c net.Conn, addr string, p store.Profile) (ssh.Conn, <-chan ssh.NewChannel, <-chan *ssh.Request, error) {
+	hkCallback, err := HostKeyCallback(p.Host, addr)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	authMethods, err := AuthMethodsForProfile(p)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	config := &ssh.ClientConfig{
+		User:            p.User,
+		Auth:            authMethods,
+		HostKeyCallback: hkCallback,
+	}
+	return ssh.NewClientConn(c, addr, config)
+}
+
+func closeHops(hops []*ssh.Client) {
+	// Close from innermost tunnel client back to outermost dial.
+	for i := len(hops) - 1; i >= 0; i-- {
+		if hops[i] != nil {
+			hops[i].Close()
+		}
+	}
+}
+
+// Close terminates the SSH connection and any jump-host hops.
 func (s *Session) Close() error {
 	if s.sshSession != nil {
 		s.sshSession.Close()
 	}
-	return s.client.Close()
+	var err error
+	if s.client != nil {
+		err = s.client.Close()
+	}
+	closeHops(s.hops)
+	return err
 }
 
 // AuthMethodsForProfile converts a Profile into SSH auth methods.

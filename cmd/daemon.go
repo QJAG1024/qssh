@@ -109,7 +109,7 @@ func RunDaemon(profile string, modeStr string) {
 		os.Exit(1)
 	}
 
-	session, err := sshclient.Dial(p, internal.NopProgress)
+	session, err := sshclient.DialProfile(p, store.Get, internal.NopProgress)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "connect: %v\n", err)
 		os.Exit(1)

@@ -184,7 +184,7 @@ func SftpDaemon(profileName, portStr, bindAddr string) {
 	}
 
 	setProgress(profileName, i18n.T("sftp.connecting"))
-	session, err := sshclient.Dial(p, internal.NopProgress)
+	session, err := sshclient.DialProfile(p, openStore.Get, internal.NopProgress)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[sftp-daemon] SSH dial: %v\n", err)
 		setFailed(profileName)
