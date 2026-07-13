@@ -9,7 +9,10 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // daemonRunning checks if a daemon socket exists and responds to ping.
@@ -35,24 +38,63 @@ func daemonRunning(profile string) bool {
 }
 
 // execViaDaemon sends a command to the daemon and streams results to stdout/stderr.
+// Args are sent as a raw argv array (daemon shell-quotes them). Local stdin is
+// forwarded as base64 stdin frames until EOF.
 // Returns the exit code.
-func execViaDaemon(profile, cmd string) (int, error) {
+func execViaDaemon(profile string, args []string) (int, error) {
 	conn, err := dialDaemon(profile)
 	if err != nil {
 		return -1, err
 	}
 	defer conn.Close()
 
-	// Send exec request.
-	req := daemonReq{Type: "exec", Cmd: cmd}
+	// Send exec request with raw argv.
+	req := daemonReq{Type: "exec", Args: args, Cmd: strings.Join(args, " ")}
 	data, _ := json.Marshal(req)
-	conn.Write(append(data, '\n'))
+	if _, err := conn.Write(append(data, '\n')); err != nil {
+		return -1, err
+	}
+
+	// Stream local stdin only when it is not a TTY (pipe/redirect). Interactive
+// terminals would otherwise block forever waiting for keyboard input.
+	stdinDone := make(chan struct{})
+	go func() {
+		defer close(stdinDone)
+		sendEOF := func() {
+			frame, _ := json.Marshal(daemonReq{Type: "stdin_eof"})
+			_, _ = conn.Write(append(frame, '\n'))
+		}
+		if term.IsTerminal(int(os.Stdin.Fd())) {
+			sendEOF()
+			return
+		}
+		buf := make([]byte, 32*1024)
+		for {
+			n, err := os.Stdin.Read(buf)
+			if n > 0 {
+				frame, _ := json.Marshal(daemonReq{
+					Type: "stdin",
+					Data: base64.StdEncoding.EncodeToString(buf[:n]),
+				})
+				if _, werr := conn.Write(append(frame, '\n')); werr != nil {
+					return
+				}
+			}
+			if err != nil {
+				sendEOF()
+				return
+			}
+		}
+	}()
 
 	// Read response frames.
 	dec := json.NewDecoder(conn)
 	for {
 		var resp daemonResp
 		if err := dec.Decode(&resp); err != nil {
+			// Unblock stdin writer if the connection is already dead.
+			_ = conn.Close()
+			<-stdinDone
 			if err == io.EOF {
 				return -1, nil
 			}
@@ -73,8 +115,13 @@ func execViaDaemon(profile, cmd string) (int, error) {
 				os.Stderr.Write(payload)
 			}
 		case "exit":
+			// Stop stdin streaming if the remote finished early.
+			_ = conn.Close()
+			<-stdinDone
 			return resp.Code, nil
 		case "error":
+			_ = conn.Close()
+			<-stdinDone
 			fmt.Fprintln(os.Stderr, resp.Msg)
 			return -1, nil
 		}

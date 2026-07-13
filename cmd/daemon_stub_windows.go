@@ -52,7 +52,7 @@ func startManagedDaemon(profile string) error {
 	return fmt.Errorf("not supported on Windows")
 }
 
-func execViaDaemon(profile, cmd string) (int, error) {
+func execViaDaemon(profile string, args []string) (int, error) {
 	return -1, fmt.Errorf("not supported on Windows")
 }
 

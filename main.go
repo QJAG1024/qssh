@@ -154,7 +154,8 @@ func main() {
 			fmt.Fprintln(os.Stderr, "error: --exec requires a command")
 			os.Exit(1)
 		}
-		cmd.Exec(execName, strings.Join(flag.Args(), " "))
+		// Pass raw argv so spaces/quotes survive remote shell quoting.
+			cmd.Exec(execName, flag.Args())
 	case sftpStartName != "":
 		bindAddr := sftpBind
 		if bindAddr == "" {

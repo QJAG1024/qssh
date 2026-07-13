@@ -264,8 +264,9 @@ func (s *Session) Client() *ssh.Client {
 	return s.client
 }
 
-// setSessionEnv applies SetEnv options from the profile to an SSH session.
-func setSessionEnv(sshSesh *ssh.Session, p store.Profile) {
+// ApplySessionEnv applies SetEnv options from the profile to an SSH session.
+// Supports comma-separated KEY=VALUE pairs in Options["SetEnv"].
+func ApplySessionEnv(sshSesh *ssh.Session, p store.Profile) {
 	if env, ok := p.Options["SetEnv"]; ok && env != "" {
 		// Support comma-separated KEY=VALUE pairs
 		for _, pair := range strings.Split(env, ",") {
@@ -283,6 +284,11 @@ func setSessionEnv(sshSesh *ssh.Session, p store.Profile) {
 			}
 		}
 	}
+}
+
+// setSessionEnv is kept as an alias for call sites inside this package.
+func setSessionEnv(sshSesh *ssh.Session, p store.Profile) {
+	ApplySessionEnv(sshSesh, p)
 }
 
 // DialViaProxy establishes an SSH connection through a jump host.

@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -45,10 +46,12 @@ func daemonPidPath(profile string) string {
 // --- Wire protocol (JSON lines, newline-delimited) ---
 
 type daemonReq struct {
-	Type     string `json:"type"`               // "exec", "mount", "unmount", "stop"
-	Cmd      string `json:"cmd,omitempty"`       // for exec
-	BindAddr string `json:"bind_addr,omitempty"` // for mount
-	MountPort int   `json:"mount_port,omitempty"` // for mount (0 = random)
+	Type      string   `json:"type"`                 // "exec","stdin","stdin_eof","mount","unmount","stop","ping"
+	Cmd       string   `json:"cmd,omitempty"`        // legacy shell command string for exec
+	Args      []string `json:"args,omitempty"`       // raw argv for exec (preferred; shell-quoted remotely)
+	Data      string   `json:"data,omitempty"`       // base64 stdin chunk
+	BindAddr  string   `json:"bind_addr,omitempty"`  // for mount
+	MountPort int      `json:"mount_port,omitempty"` // for mount (0 = random)
 }
 
 type daemonResp struct {
@@ -105,19 +108,21 @@ type daemon struct {
 	profile string
 	mode    daemonMode
 	store   *store.Store
+	// profileData is a snapshot used for SetEnv etc. during exec.
+	profileData store.Profile
 
 	// sshMu guards the live SSH session/client used by exec and SFTP.
 	sshMu     sync.Mutex
 	session   *sshclient.Session
 	sshClient *ssh.Client
 
-	mu           sync.Mutex
-	activeConns  map[string]*connState
-	sftpRunning  bool
-	sftpPort     int
-	sftpListener net.Listener
-	idleTimeout  time.Duration
-	idleTimer    *time.Timer
+	mu            sync.Mutex
+	activeConns   map[string]*connState
+	sftpRunning   bool
+	sftpPort      int
+	sftpListener  net.Listener
+	idleTimeout   time.Duration
+	idleTimer     *time.Timer
 	stopKeepalive chan struct{}
 	stopOnce      sync.Once
 }
@@ -175,6 +180,7 @@ func RunDaemon(profile string, modeStr string) {
 
 	d := &daemon{
 		profile:       profile,
+		profileData:   p,
 		mode:          mode,
 		store:         st,
 		session:       session,
@@ -357,7 +363,7 @@ func (d *daemon) handleConn(id string, conn net.Conn) {
 		}
 		switch req.Type {
 		case "exec":
-			d.handleExec(id, req.Cmd, w)
+			d.handleExec(id, req, w, dec)
 		case "mount":
 			d.handleMount(w, req)
 		case "unmount":
@@ -366,6 +372,8 @@ func (d *daemon) handleConn(id string, conn net.Conn) {
 			d.handleStop(w)
 		case "ping":
 			_ = w.writeJSON(daemonResp{Type: "ping"})
+		case "stdin", "stdin_eof":
+			// stdin frames outside of an active exec are ignored
 		default:
 			_ = w.writeJSON(daemonResp{Type: "error", Msg: "unknown type: " + req.Type})
 		}
@@ -374,7 +382,13 @@ func (d *daemon) handleConn(id string, conn net.Conn) {
 
 // --- Exec ---
 
-func (d *daemon) handleExec(id string, cmd string, w *connWriter) {
+func (d *daemon) handleExec(id string, req daemonReq, w *connWriter, dec *json.Decoder) {
+	cmd := buildRemoteCommand(req)
+	if cmd == "" {
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: "empty command"})
+		return
+	}
+
 	d.mu.Lock()
 	if cs, ok := d.activeConns[id]; ok {
 		cs.cmd = cmd
@@ -396,20 +410,63 @@ func (d *daemon) handleExec(id string, cmd string, w *connWriter) {
 	}
 	defer sshSesh.Close()
 
+	// Apply profile SetEnv before starting the remote command.
+	sshclient.ApplySessionEnv(sshSesh, d.profileData)
+
+	stdin, err := sshSesh.StdinPipe()
+	if err != nil {
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: "stdin pipe: " + err.Error()})
+		return
+	}
 	stdout, _ := sshSesh.StdoutPipe()
 	stderr, _ := sshSesh.StderrPipe()
 
 	if err := sshSesh.Start(cmd); err != nil {
+		stdin.Close()
 		// Start can also fail if the connection died between NewSession and Start.
 		_ = w.writeJSON(daemonResp{Type: "error", Msg: err.Error()})
 		return
 	}
+
+	// Pump client stdin frames into the remote session until eof.
+	// Runs on this goroutine so it owns the decoder for the duration of exec.
+	stdinDone := make(chan struct{})
+	go func() {
+		defer close(stdinDone)
+		defer stdin.Close()
+		for {
+			var in daemonReq
+			if err := dec.Decode(&in); err != nil {
+				return
+			}
+			switch in.Type {
+			case "stdin":
+				if in.Data == "" {
+					continue
+				}
+				payload, err := base64.StdEncoding.DecodeString(in.Data)
+				if err != nil {
+					// Accept raw for robustness.
+					payload = []byte(in.Data)
+				}
+				if _, err := stdin.Write(payload); err != nil {
+					return
+				}
+			case "stdin_eof":
+				return
+			default:
+				// Unexpected control frame mid-exec: stop stdin, leave rest.
+				return
+			}
+		}
+	}()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() { defer wg.Done(); streamOutput(w, stdout, "stdout") }()
 	go func() { defer wg.Done(); streamOutput(w, stderr, "stderr") }()
 	wg.Wait()
+	<-stdinDone
 
 	code := 0
 	if err := sshSesh.Wait(); err != nil {
@@ -420,6 +477,51 @@ func (d *daemon) handleExec(id string, cmd string, w *connWriter) {
 		}
 	}
 	_ = w.writeJSON(daemonResp{Type: "exit", Code: code})
+}
+
+// buildRemoteCommand prefers Args over legacy Cmd.
+// Multiple args are shell-quoted (safe argv). A single arg is treated as a
+// full shell command string so `qssh --exec h 'echo hi'` keeps working.
+func buildRemoteCommand(req daemonReq) string {
+	switch len(req.Args) {
+	case 0:
+		return req.Cmd
+	case 1:
+		return req.Args[0]
+	default:
+		return shellJoin(req.Args)
+	}
+}
+
+// shellJoin quotes each argument for a POSIX-like remote shell.
+func shellJoin(args []string) string {
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = shellQuote(a)
+	}
+	return strings.Join(parts, " ")
+}
+
+// shellQuote wraps s in single quotes, escaping embedded quotes as '\''.
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	// Fast path: no metacharacters that need quoting.
+	safe := true
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '.' || c == '/' || c == ':' || c == '@' || c == '+' || c == ',' {
+			continue
+		}
+		safe = false
+		break
+	}
+	if safe {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func streamOutput(w *connWriter, r io.Reader, streamType string) {
