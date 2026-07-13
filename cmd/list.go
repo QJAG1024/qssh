@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -10,8 +11,27 @@ import (
 	"qssh/store"
 )
 
+// listJSON is a redacted profile view for machine-readable output.
+// Secrets (password, key passphrase) are never included.
+type listJSON struct {
+	Name            string            `json:"name"`
+	Host            string            `json:"host"`
+	Port            int               `json:"port"`
+	User            string            `json:"user"`
+	Auth            string            `json:"auth"`
+	KeyPath         string            `json:"key_path,omitempty"`
+	Proxy           string            `json:"proxy,omitempty"`
+	Options         map[string]string `json:"options,omitempty"`
+	Tags            []string          `json:"tags,omitempty"`
+	CreatedAt       time.Time         `json:"created_at"`
+	UpdatedAt       time.Time         `json:"updated_at"`
+	LastUsed        *time.Time        `json:"last_used,omitempty"`
+	ConnectionCount int               `json:"connection_count"`
+}
+
 // List displays all profiles in a formatted table, optionally filtered.
-func List(filter string) {
+// When asJSON is true, prints a JSON array (secrets redacted).
+func List(filter string, asJSON bool) {
 	s, err := openStore()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, i18n.T("store.open_error")+"\n", err)
@@ -30,6 +50,38 @@ func List(filter string) {
 				profiles = append(profiles, p)
 			}
 		}
+	}
+
+	if asJSON {
+		out := make([]listJSON, 0, len(profiles))
+		for _, p := range profiles {
+			item := listJSON{
+				Name:            p.Name,
+				Host:            p.Host,
+				Port:            p.Port,
+				User:            p.User,
+				Auth:            string(p.Auth),
+				KeyPath:         p.KeyPath,
+				Proxy:           p.Proxy,
+				Options:         p.Options,
+				Tags:            p.Tags,
+				CreatedAt:       p.CreatedAt,
+				UpdatedAt:       p.UpdatedAt,
+				ConnectionCount: p.ConnectionCount,
+			}
+			if !p.LastUsed.IsZero() {
+				t := p.LastUsed
+				item.LastUsed = &t
+			}
+			out = append(out, item)
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(out); err != nil {
+			fmt.Fprintf(os.Stderr, "json encode: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	if len(profiles) == 0 {

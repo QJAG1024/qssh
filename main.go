@@ -29,8 +29,10 @@ func main() {
 		addAuth        string
 		addPassword    string
 		addKeyPath     string
+		addKeyPass     string
 		addProxy       string
 		addOptionsStr  string
+		addTagsStr     string
 		editName       string
 		delName        string
 		copyOld        string
@@ -50,6 +52,8 @@ func main() {
 		daemonBind     string // --bind-addr (internal)
 		doConfig       bool
 		doList         bool
+		listJSON       bool
+		forceYes       bool
 		showVer        bool
 	)
 
@@ -60,8 +64,10 @@ func main() {
 	flag.StringVar(&addAuth, "auth", "", "Auth method for --add (password/key/agent/keyboard-interactive)")
 	flag.StringVar(&addPassword, "password", "", "Password for --add")
 	flag.StringVar(&addKeyPath, "key-path", "", "Key path for --add (used with --auth key)")
+	flag.StringVar(&addKeyPass, "key-passphrase", "", "Passphrase for encrypted private key (--add/--edit)")
 	flag.StringVar(&addProxy, "proxy", "", "Proxy profile name for --add or --edit")
 	flag.StringVar(&addOptionsStr, "set-option", "", "Options for --add (comma-separated KEY=VALUE pairs, e.g. ConnectTimeout=30s,SetEnv=LANG=en_US.UTF-8)")
+	flag.StringVar(&addTagsStr, "tags", "", "Comma-separated tags for --add or --edit")
 	flag.StringVar(&editName, "edit", "", "Edit an existing profile")
 	flag.StringVar(&delName, "delete", "", "Delete a profile")
 	flag.StringVar(&copyOld, "copy", "", "Copy a profile (usage: qssh --copy <old-name> <new-name>)")
@@ -81,6 +87,9 @@ func main() {
 	flag.StringVar(&daemonBind, "bind-addr", "", "Internal: bind address")
 	flag.BoolVar(&doConfig, "config", false, "View or modify config (usage: qssh --config [get|set <key> <value>])")
 	flag.BoolVar(&doList, "list", false, "List profiles (optional: qssh --list filter)")
+	flag.BoolVar(&listJSON, "json", false, "Machine-readable JSON output (use with --list)")
+	flag.BoolVar(&forceYes, "yes", false, "Skip confirmation prompts (agent-friendly)")
+	flag.BoolVar(&forceYes, "y", false, "Short for --yes")
 	flag.BoolVar(&showVer, "version", false, "Print version")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, i18n.T("usage.text"), version)
@@ -109,30 +118,34 @@ func main() {
 		cmd.Config(flag.Args())
 	case addName != "":
 		cmd.Add(cmd.AddOpts{
-			Name:     addName,
-			Host:     addHost,
-			Port:     addPort,
-			User:     addUser,
-			Auth:     addAuth,
-			Password: addPassword,
-			KeyPath:  addKeyPath,
-			Proxy:    addProxy,
-			Options:  optsMap,
+			Name:          addName,
+			Host:          addHost,
+			Port:          addPort,
+			User:          addUser,
+			Auth:          addAuth,
+			Password:      addPassword,
+			KeyPath:       addKeyPath,
+			KeyPassphrase: addKeyPass,
+			Proxy:         addProxy,
+			Options:       optsMap,
+			Tags:          parseTags(addTagsStr),
 		})
 	case editName != "":
 		editOpts := cmd.AddOpts{
-			Host:     addHost,
-			Port:     addPort,
-			User:     addUser,
-			Auth:     addAuth,
-			Password: addPassword,
-			KeyPath:  addKeyPath,
-			Proxy:    addProxy,
-			Options:  optsMap,
+			Host:          addHost,
+			Port:          addPort,
+			User:          addUser,
+			Auth:          addAuth,
+			Password:      addPassword,
+			KeyPath:       addKeyPath,
+			KeyPassphrase: addKeyPass,
+			Proxy:         addProxy,
+			Options:       optsMap,
+			Tags:          parseTags(addTagsStr),
 		}
 		cmd.Edit(editName, editOpts)
 	case delName != "":
-		cmd.Delete(delName)
+		cmd.Delete(delName, forceYes)
 	case copyOld != "":
 		newName := flag.Arg(0)
 		if newName == "" {
@@ -155,7 +168,7 @@ func main() {
 			os.Exit(1)
 		}
 		// Pass raw argv so spaces/quotes survive remote shell quoting.
-			cmd.Exec(execName, flag.Args())
+		cmd.Exec(execName, flag.Args())
 	case sftpStartName != "":
 		bindAddr := sftpBind
 		if bindAddr == "" {
@@ -169,12 +182,12 @@ func main() {
 		cmd.SftpStart(sftpStartName, bindAddr, addPort)
 	case sftpStopName != "":
 		cmd.SftpStop(sftpStopName)
-	case doList:
+	case doList || listJSON:
 		filter := ""
 		if flag.NArg() > 0 {
 			filter = flag.Arg(0)
 		}
-		cmd.List(filter)
+		cmd.List(filter, listJSON)
 	case flag.NArg() == 1:
 		connectCmd(flag.Arg(0))
 	default:
@@ -198,6 +211,7 @@ func parseOptionsString(s string) map[string]string {
 		}
 		kv := strings.SplitN(pair, "=", 2)
 		if len(kv) != 2 {
+			fmt.Fprintf(os.Stderr, "warning: ignoring malformed option %q (expected KEY=VALUE)\n", pair)
 			continue
 		}
 		key := strings.TrimSpace(kv[0])
@@ -207,4 +221,19 @@ func parseOptionsString(s string) map[string]string {
 		}
 	}
 	return m
+}
+
+// parseTags splits a comma-separated tag list.
+func parseTags(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var tags []string
+	for _, t := range strings.Split(s, ",") {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			tags = append(tags, t)
+		}
+	}
+	return tags
 }

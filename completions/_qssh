@@ -1,12 +1,23 @@
 #compdef qssh
 _qssh() {
   local -a profiles
-  profiles=(${(f)"$(_call_program profiles qssh --list 2>/dev/null | tail -n +3 | awk 'NF{print \$1}')"})
+  profiles=(${(f)"$(_call_program profiles qssh --list --json 2>/dev/null | python3 -c 'import json,sys
+try:
+  data=json.load(sys.stdin)
+  for p in data: print(p.get("name",""))
+except Exception:
+  pass' 2>/dev/null)"})
+  if (( ${#profiles} == 0 )); then
+    profiles=(${(f)"$(_call_program profiles qssh --list 2>/dev/null | tail -n +3 | awk 'NF{print $1}')"})
+  fi
   _arguments \
     "--add[Create a new profile]:name:" \
     "--edit[Edit an existing profile]:name:(${profiles})" \
     "--delete[Delete a profile]:name:(${profiles})" \
     "--list[List profiles]:filter:()" \
+    "--json[JSON output (with --list)]" \
+    "--yes[Skip confirmation prompts]" \
+    "-y[Skip confirmation prompts]" \
     "--exec[Execute a command]:name:(${profiles})" \
     "--sftp-start[Start SFTP proxy]:name:(${profiles})" \
     "--sftp-stop[Stop SFTP proxy]:name:(${profiles})" \
@@ -15,8 +26,20 @@ _qssh() {
     "--copy[Copy a profile]:name:(${profiles})" \
     "--rename[Rename a profile]:name:(${profiles})" \
     "--history[Show connection history]:name:(${profiles})" \
+    "--config[View or modify config]" \
     "--version[Print version]" \
+    "--host[Host]:host:" \
+    "--port[Port]:port:" \
+    "--user[User]:user:" \
+    "--auth[Auth method]:auth:(password key agent keyboard-interactive)" \
+    "--password[Password]:password:" \
+    "--key-path[Key path]:path:_files" \
+    "--key-passphrase[Key passphrase]:passphrase:" \
     "--proxy[Proxy profile]:name:(${profiles})" \
+    "--set-option[Options KEY=VALUE]:options:" \
+    "--tags[Comma-separated tags]:tags:" \
+    "--bind[SFTP bind address]:addr:" \
+    "--last[Show only last connection]" \
     "*: :->profile"
   case $state in
     profile)

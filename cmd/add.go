@@ -14,10 +14,11 @@ import (
 // AddOpts holds optional pre-filled values for non-interactive profile creation.
 // Zero values mean "prompt the user interactively".
 type AddOpts struct {
-	Name, Host, User, Auth, Password, KeyPath string
-	Port                                     int
-	Proxy                                    string
-	Options                                  map[string]string
+	Name, Host, User, Auth, Password, KeyPath, KeyPassphrase string
+	Port                                                     int
+	Proxy                                                    string
+	Options                                                  map[string]string
+	Tags                                                     []string
 }
 
 // Add creates a new SSH credential profile.
@@ -112,6 +113,9 @@ func Add(opts AddOpts) {
 		} else {
 			p.KeyPath = internal.Prompt("Key path", "~/.ssh/id_ed25519")
 		}
+		if opts.KeyPassphrase != "" {
+			p.KeyPassphrase = opts.KeyPassphrase
+		}
 	case "agent", "a":
 		p.Auth = store.AuthAgent
 	case "keyboard-interactive", "ki":
@@ -131,6 +135,9 @@ func Add(opts AddOpts) {
 	}
 	if opts.Proxy != "" {
 		p.Proxy = opts.Proxy
+	}
+	if len(opts.Tags) > 0 {
+		p.Tags = opts.Tags
 	}
 	p.SetDefaults()
 	if err := s.Add(p); err != nil {

@@ -9,7 +9,8 @@ import (
 )
 
 // Delete removes a profile after confirmation.
-func Delete(name string) {
+// When force is true (--yes/-y), skips the interactive prompt (agent-friendly).
+func Delete(name string, force bool) {
 	s, err := openStore()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, i18n.T("store.open_error")+"\n", err)
@@ -21,9 +22,11 @@ func Delete(name string) {
 		os.Exit(1)
 	}
 
-	if !internal.Confirm(fmt.Sprintf(i18n.T("profile.delete_confirm"), name), false) {
-		fmt.Println(i18n.T("profile.cancelled"))
-		return
+	if !force {
+		if !internal.Confirm(fmt.Sprintf(i18n.T("profile.delete_confirm"), name), false) {
+			fmt.Println(i18n.T("profile.cancelled"))
+			return
+		}
 	}
 
 	if err := s.Delete(name); err != nil {

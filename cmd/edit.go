@@ -29,7 +29,8 @@ func Edit(name string, opts AddOpts) {
 
 	nonInteractive := opts.Host != "" || opts.User != "" || opts.Auth != "" ||
 		opts.Port > 0 || opts.Password != "" || opts.KeyPath != "" ||
-		opts.Proxy != "" || opts.Options != nil
+		opts.KeyPassphrase != "" || opts.Proxy != "" || opts.Options != nil ||
+		len(opts.Tags) > 0
 
 	if nonInteractive {
 		if opts.Host != "" {
@@ -65,6 +66,9 @@ func Edit(name string, opts AddOpts) {
 			if opts.KeyPath != "" {
 				p.KeyPath = opts.KeyPath
 			}
+			if opts.KeyPassphrase != "" {
+				p.KeyPassphrase = opts.KeyPassphrase
+			}
 		}
 		if opts.Options != nil {
 			if p.Options == nil {
@@ -76,6 +80,9 @@ func Edit(name string, opts AddOpts) {
 		}
 		if opts.Proxy != "" {
 			p.Proxy = opts.Proxy
+		}
+		if len(opts.Tags) > 0 {
+			p.Tags = opts.Tags
 		}
 		if opts.Name != "" {
 			p.Name = opts.Name
