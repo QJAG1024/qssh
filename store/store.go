@@ -131,6 +131,36 @@ func (s *Store) Delete(name string) error {
 	return s.save()
 }
 
+// Rename renames a profile in a single atomic save. Returns error if old
+// is missing or new already exists.
+func (s *Store) Rename(oldName, newName string) error {
+	if newName == "" {
+		return fmt.Errorf("new profile name is required")
+	}
+	if oldName == newName {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, exists := s.profiles[oldName]
+	if !exists {
+		return fmt.Errorf("profile %q not found", oldName)
+	}
+	if _, exists := s.profiles[newName]; exists {
+		return fmt.Errorf("profile %q already exists", newName)
+	}
+	// Validate with the new name before mutating.
+	p.Name = newName
+	if err := p.Validate(); err != nil {
+		return err
+	}
+	p.UpdatedAt = time.Now()
+	delete(s.profiles, oldName)
+	s.profiles[newName] = p
+	s.dirty = true
+	return s.save()
+}
+
 // List returns all profile names sorted alphabetically.
 func (s *Store) List() []string {
 	s.mu.RLock()
@@ -263,9 +293,40 @@ func (s *Store) save() error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(s.path, out, 0600); err != nil {
-		return err
+	// Atomic replace: write temp in the same directory then rename.
+	// rename(2) is atomic on the same filesystem, so a crash mid-write
+	// cannot leave a truncated store.json.
+	tmp, err := os.CreateTemp(dir, ".store-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp store: %w", err)
 	}
+	tmpName := tmp.Name()
+	// Ensure the temp file is removed on any failure path.
+	cleanup := true
+	defer func() {
+		if cleanup {
+			os.Remove(tmpName)
+		}
+	}()
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close()
+		return fmt.Errorf("chmod temp store: %w", err)
+	}
+	if _, err := tmp.Write(out); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temp store: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("sync temp store: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp store: %w", err)
+	}
+	if err := os.Rename(tmpName, s.path); err != nil {
+		return fmt.Errorf("replace store: %w", err)
+	}
+	cleanup = false
 	s.dirty = false
 	return nil
 }

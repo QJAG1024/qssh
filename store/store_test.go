@@ -240,3 +240,64 @@ func TestStore_CorruptedFile(t *testing.T) {
 		t.Fatal("expected error for corrupted file")
 	}
 }
+func TestStore_Rename(t *testing.T) {
+	s, _ := newTestStore(t)
+	s.Add(Profile{Name: "old", Host: "h", Port: 22, User: "u", Auth: AuthPassword, Password: "p"})
+
+	if err := s.Rename("old", "new"); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if _, ok := s.Get("old"); ok {
+		t.Fatal("old name should be gone")
+	}
+	got, ok := s.Get("new")
+	if !ok {
+		t.Fatal("new name should exist")
+	}
+	if got.Host != "h" || got.Name != "new" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestStore_RenameConflict(t *testing.T) {
+	s, _ := newTestStore(t)
+	s.Add(Profile{Name: "a", Host: "h", Port: 22, User: "u", Auth: AuthPassword, Password: "p"})
+	s.Add(Profile{Name: "b", Host: "h2", Port: 22, User: "u", Auth: AuthPassword, Password: "p"})
+	err := s.Rename("a", "b")
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected already exists, got: %v", err)
+	}
+	// Original must still be present after failed rename.
+	if _, ok := s.Get("a"); !ok {
+		t.Fatal("source should remain after conflict")
+	}
+}
+
+func TestStore_RenameNotFound(t *testing.T) {
+	s, _ := newTestStore(t)
+	err := s.Rename("missing", "x")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not found, got: %v", err)
+	}
+}
+
+func TestStore_AtomicSaveNoTempLeft(t *testing.T) {
+	s, storePath := newTestStore(t)
+	if err := s.Add(Profile{Name: "x", Host: "h", Port: 22, User: "u", Auth: AuthPassword, Password: "p"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	// Final store must exist; no leftover .store-*.tmp files.
+	if _, err := os.Stat(storePath); err != nil {
+		t.Fatalf("store missing: %v", err)
+	}
+	dir := filepath.Dir(storePath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".store-") && strings.HasSuffix(e.Name(), ".tmp") {
+			t.Fatalf("temp file left behind: %s", e.Name())
+		}
+	}
+}
