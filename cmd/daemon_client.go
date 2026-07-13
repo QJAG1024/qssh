@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,10 +60,18 @@ func execViaDaemon(profile, cmd string) (int, error) {
 		}
 
 		switch resp.Type {
-		case "stdout":
-			os.Stdout.Write([]byte(resp.Data))
-		case "stderr":
-			os.Stderr.Write([]byte(resp.Data))
+		case "stdout", "stderr":
+			// Stream frames are base64-encoded for binary safety.
+			// Fall back to raw bytes for older daemons that sent plain text.
+			payload, err := base64.StdEncoding.DecodeString(resp.Data)
+			if err != nil {
+				payload = []byte(resp.Data)
+			}
+			if resp.Type == "stdout" {
+				os.Stdout.Write(payload)
+			} else {
+				os.Stderr.Write(payload)
+			}
 		case "exit":
 			return resp.Code, nil
 		case "error":

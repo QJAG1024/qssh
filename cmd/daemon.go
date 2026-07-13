@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -51,6 +52,8 @@ type daemonReq struct {
 
 type daemonResp struct {
 	Type string `json:"type"` // "stdout","stderr","exit","mounted","error","stopped","ping"
+	// Data is base64-encoded for stdout/stderr stream frames (binary-safe).
+	// Control messages leave Data empty and use Msg/Code/Port instead.
 	Data string `json:"data,omitempty"`
 	Code int    `json:"code,omitempty"`
 	Msg  string `json:"msg,omitempty"`
@@ -74,6 +77,29 @@ type connState struct {
 	cmd string // current command, empty when idle
 }
 
+// connWriter serializes all writes on a single client connection.
+// stdout/stderr streamers and control replies share the same net.Conn.
+type connWriter struct {
+	mu   sync.Mutex
+	conn net.Conn
+}
+
+func newConnWriter(conn net.Conn) *connWriter {
+	return &connWriter{conn: conn}
+}
+
+func (w *connWriter) writeJSON(resp daemonResp) error {
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_, err = w.conn.Write(data)
+	return err
+}
+
 type daemon struct {
 	profile   string
 	mode      daemonMode
@@ -86,11 +112,6 @@ type daemon struct {
 	sftpListener net.Listener
 	idleTimeout  time.Duration
 	idleTimer    *time.Timer
-}
-
-func (d *daemon) writeJSON(conn net.Conn, resp daemonResp) {
-	data, _ := json.Marshal(resp)
-	conn.Write(append(data, '\n'))
 }
 
 // --- Daemon lifecycle ---
@@ -181,6 +202,7 @@ func (d *daemon) handleConn(id string, conn net.Conn) {
 	defer conn.Close()
 
 	pid, _ := peerPID(conn)
+	w := newConnWriter(conn)
 
 	d.mu.Lock()
 	d.activeConns[id] = &connState{pid: pid}
@@ -209,24 +231,24 @@ func (d *daemon) handleConn(id string, conn net.Conn) {
 		}
 		switch req.Type {
 		case "exec":
-			d.handleExec(id, req.Cmd, conn)
+			d.handleExec(id, req.Cmd, w)
 		case "mount":
-			d.handleMount(conn, req)
+			d.handleMount(w, req)
 		case "unmount":
-			d.handleUnmount(conn)
+			d.handleUnmount(w)
 		case "stop":
-			d.handleStop(conn)
+			d.handleStop(w)
 		case "ping":
-			d.writeJSON(conn, daemonResp{Type: "ping"})
+			_ = w.writeJSON(daemonResp{Type: "ping"})
 		default:
-			d.writeJSON(conn, daemonResp{Type: "error", Msg: "unknown type: " + req.Type})
+			_ = w.writeJSON(daemonResp{Type: "error", Msg: "unknown type: " + req.Type})
 		}
 	}
 }
 
 // --- Exec ---
 
-func (d *daemon) handleExec(id string, cmd string, conn net.Conn) {
+func (d *daemon) handleExec(id string, cmd string, w *connWriter) {
 	d.mu.Lock()
 	if cs, ok := d.activeConns[id]; ok {
 		cs.cmd = cmd
@@ -243,7 +265,7 @@ func (d *daemon) handleExec(id string, cmd string, conn net.Conn) {
 
 	sshSesh, err := d.sshClient.NewSession()
 	if err != nil {
-		d.writeJSON(conn, daemonResp{Type: "error", Msg: err.Error()})
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: err.Error()})
 		return
 	}
 	defer sshSesh.Close()
@@ -252,14 +274,14 @@ func (d *daemon) handleExec(id string, cmd string, conn net.Conn) {
 	stderr, _ := sshSesh.StderrPipe()
 
 	if err := sshSesh.Start(cmd); err != nil {
-		d.writeJSON(conn, daemonResp{Type: "error", Msg: err.Error()})
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: err.Error()})
 		return
 	}
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); streamOutput(conn, stdout, "stdout") }()
-	go func() { defer wg.Done(); streamOutput(conn, stderr, "stderr") }()
+	go func() { defer wg.Done(); streamOutput(w, stdout, "stdout") }()
+	go func() { defer wg.Done(); streamOutput(w, stderr, "stderr") }()
 	wg.Wait()
 
 	code := 0
@@ -270,19 +292,20 @@ func (d *daemon) handleExec(id string, cmd string, conn net.Conn) {
 			code = 1
 		}
 	}
-	d.writeJSON(conn, daemonResp{Type: "exit", Code: code})
+	_ = w.writeJSON(daemonResp{Type: "exit", Code: code})
 }
 
-func streamOutput(conn net.Conn, r io.Reader, streamType string) {
-	buf := make([]byte, 4096)
+func streamOutput(w *connWriter, r io.Reader, streamType string) {
+	buf := make([]byte, 32*1024)
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
-			// Write each chunk as a JSON frame.
-			// Large writes are batched at the net.Conn level.
-			data, _ := json.Marshal(daemonResp{Type: streamType, Data: string(buf[:n])})
-			data = append(data, '\n')
-			conn.Write(data)
+			// Base64 keeps arbitrary binary (and embedded newlines) intact
+			// inside JSON-line frames; writeJSON serializes concurrent writers.
+			_ = w.writeJSON(daemonResp{
+				Type: streamType,
+				Data: base64.StdEncoding.EncodeToString(buf[:n]),
+			})
 		}
 		if err != nil {
 			return
@@ -292,14 +315,16 @@ func streamOutput(conn net.Conn, r io.Reader, streamType string) {
 
 // --- Mount ---
 
-func (d *daemon) handleMount(conn net.Conn, req daemonReq) {
+func (d *daemon) handleMount(w *connWriter, req daemonReq) {
 	d.mu.Lock()
 	if d.sftpRunning {
+		port := d.sftpPort
 		d.mu.Unlock()
-		d.writeJSON(conn, daemonResp{
+		_ = w.writeJSON(daemonResp{
 			Type:        "mounted",
-			Port:        d.sftpPort,
+			Port:        port,
 			Fingerprint: "",
+			Pid:         os.Getpid(),
 		})
 		return
 	}
@@ -320,7 +345,7 @@ func (d *daemon) handleMount(conn net.Conn, req daemonReq) {
 
 	signer, err := sftpproxy.LoadHostKey(cfgDir)
 	if err != nil {
-		d.writeJSON(conn, daemonResp{Type: "error", Msg: "host key: " + err.Error()})
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: "host key: " + err.Error()})
 		return
 	}
 
@@ -329,7 +354,7 @@ func (d *daemon) handleMount(conn net.Conn, req daemonReq) {
 	// Listen on random port.
 	listener, err := net.Listen("tcp", net.JoinHostPort(bindAddr, portStr))
 	if err != nil {
-		d.writeJSON(conn, daemonResp{Type: "error", Msg: "listen: " + err.Error()})
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: "listen: " + err.Error()})
 		return
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
@@ -338,7 +363,7 @@ func (d *daemon) handleMount(conn net.Conn, req daemonReq) {
 	sfClient, err := sftp.NewClient(d.sshClient)
 	if err != nil {
 		listener.Close()
-		d.writeJSON(conn, daemonResp{Type: "error", Msg: "sftp: " + err.Error()})
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: "sftp: " + err.Error()})
 		return
 	}
 
@@ -357,7 +382,7 @@ func (d *daemon) handleMount(conn net.Conn, req daemonReq) {
 		d.mu.Unlock()
 	}()
 
-	d.writeJSON(conn, daemonResp{
+	_ = w.writeJSON(daemonResp{
 		Type:        "mounted",
 		Port:        port,
 		Fingerprint: fingerprint,
@@ -365,20 +390,20 @@ func (d *daemon) handleMount(conn net.Conn, req daemonReq) {
 	})
 }
 
-func (d *daemon) handleUnmount(conn net.Conn) {
+func (d *daemon) handleUnmount(w *connWriter) {
 	d.mu.Lock()
 	sftpRunning := d.sftpRunning
 	listener := d.sftpListener
 	d.mu.Unlock()
 
 	if !sftpRunning || listener == nil {
-		d.writeJSON(conn, daemonResp{Type: "error", Msg: "no active mount"})
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: "no active mount"})
 		return
 	}
 
 	// Close SFTP listener, the goroutine cleans up sftpRunning/sftpListener.
 	listener.Close()
-	d.writeJSON(conn, daemonResp{Type: "unmounted"})
+	_ = w.writeJSON(daemonResp{Type: "unmounted"})
 
 	if d.mode != daemonPersistent {
 		// Managed daemon: shut down entirely.
@@ -388,7 +413,7 @@ func (d *daemon) handleUnmount(conn net.Conn) {
 
 // --- Stop ---
 
-func (d *daemon) handleStop(conn net.Conn) {
+func (d *daemon) handleStop(w *connWriter) {
 	d.mu.Lock()
 	active := make([]string, 0)
 	for _, cs := range d.activeConns {
@@ -407,19 +432,19 @@ func (d *daemon) handleStop(conn net.Conn) {
 			}
 			msg += s
 		}
-		d.writeJSON(conn, daemonResp{Type: "stopped", Msg: msg})
+		_ = w.writeJSON(daemonResp{Type: "stopped", Msg: msg})
 		return
 	}
 
 	if sftpActive && d.mode == daemonPersistent {
-		d.writeJSON(conn, daemonResp{
+		_ = w.writeJSON(daemonResp{
 			Type: "stopped",
 			Msg:  "SFTP proxy is running (mount active), unmount first",
 		})
 		return
 	}
 
-	d.writeJSON(conn, daemonResp{Type: "stopped"})
+	_ = w.writeJSON(daemonResp{Type: "stopped"})
 	d.shutdown()
 }
 
