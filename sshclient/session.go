@@ -547,8 +547,25 @@ func AuthMethodsForProfile(p store.Profile) ([]ssh.AuthMethod, error) {
 	}
 }
 
-// HostKeyCallback returns an ssh.HostKeyCallback that uses a known_hosts file
-// with "accept on first use" semantics (like OpenSSH).
+// hostKeyMode returns the configured host-key policy: "tofu" (default) or "strict".
+// Config key: hostkey.mode
+func hostKeyMode() string {
+	cfg := internal.OpenConfig(internal.DefaultConfigPath())
+	if cfg == nil {
+		return "tofu"
+	}
+	mode := strings.ToLower(strings.TrimSpace(cfg.Get("hostkey.mode")))
+	switch mode {
+	case "strict":
+		return "strict"
+	default:
+		return "tofu"
+	}
+}
+
+// HostKeyCallback returns an ssh.HostKeyCallback that uses a known_hosts file.
+// Default policy is TOFU (accept on first use) with fingerprint logged to stderr.
+// Set hostkey.mode=strict in config to reject unknown hosts.
 func HostKeyCallback(_, addr string) (ssh.HostKeyCallback, error) {
 	khPath := knownHostsFile()
 	os.MkdirAll(filepath.Dir(khPath), 0700)
@@ -568,6 +585,8 @@ func HostKeyCallback(_, addr string) (ssh.HostKeyCallback, error) {
 		normalized = append(normalized, knownhosts.Normalize(hostOnly))
 	}
 
+	mode := hostKeyMode()
+
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		err := callback(hostname, remote, key)
 		if err == nil {
@@ -581,7 +600,22 @@ func HostKeyCallback(_, addr string) (ssh.HostKeyCallback, error) {
 			// Want contains existing keys — mismatch, possible MITM.
 			return fmt.Errorf("host key mismatch for %s: %w", hostname, err)
 		}
-		// Want is empty — unknown host, accept on first use.
+		// Want is empty — unknown host.
+		fp := ssh.FingerprintSHA256(key)
+		if mode == "strict" {
+			return fmt.Errorf("unknown host key for %s (%s); hostkey.mode=strict rejects first-use", hostname, fp)
+		}
+		// TOFU: log fingerprint for audit, then accept and persist.
+		// stderr is visible for interactive connect; daemon forks discard stderr,
+		// so also append to hostkey.log under the config dir.
+		msg := fmt.Sprintf("host key accepted (TOFU): %s %s %s", hostname, key.Type(), fp)
+		fmt.Fprintln(os.Stderr, msg)
+		if logPath := hostKeyAuditLog(); logPath != "" {
+			if lf, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); err == nil {
+				fmt.Fprintf(lf, "%s %s\n", time.Now().Format(time.RFC3339), msg)
+				lf.Close()
+			}
+		}
 		f, openErr := os.OpenFile(khPath, os.O_APPEND|os.O_WRONLY, 0600)
 		if openErr != nil {
 			return nil // Accept even if we can't save
@@ -590,6 +624,14 @@ func HostKeyCallback(_, addr string) (ssh.HostKeyCallback, error) {
 		f.WriteString(knownhosts.Line(normalized, key) + "\n")
 		return nil
 	}, nil
+}
+
+func hostKeyAuditLog() string {
+	d, err := os.UserConfigDir()
+	if err != nil {
+		d = filepath.Join(os.Getenv("HOME"), ".config")
+	}
+	return filepath.Join(d, "qssh", "hostkey.log")
 }
 
 // asKeyError is a helper to type-assert *knownhosts.KeyError.

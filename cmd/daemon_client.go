@@ -56,10 +56,18 @@ func execViaDaemon(profile string, args []string) (int, error) {
 	}
 
 	// Stream local stdin only when it is not a TTY (pipe/redirect). Interactive
-// terminals would otherwise block forever waiting for keyboard input.
+	// terminals would otherwise block forever waiting for keyboard input.
+	// When the remote command finishes first, SetReadDeadline unblocks a stuck
+	// stdin Read (common with empty inherited pipes that never EOF).
 	stdinDone := make(chan struct{})
+	cancelStdin := func() {
+		_ = os.Stdin.SetReadDeadline(time.Now())
+	}
 	go func() {
 		defer close(stdinDone)
+		_ = os.Stdin.SetReadDeadline(time.Time{})
+		defer func() { _ = os.Stdin.SetReadDeadline(time.Time{}) }()
+
 		sendEOF := func() {
 			frame, _ := json.Marshal(daemonReq{Type: "stdin_eof"})
 			_, _ = conn.Write(append(frame, '\n'))
@@ -87,18 +95,25 @@ func execViaDaemon(profile string, args []string) (int, error) {
 		}
 	}()
 
+	finish := func(code int, retErr error) (int, error) {
+		cancelStdin()
+		_ = conn.Close()
+		select {
+		case <-stdinDone:
+		case <-time.After(200 * time.Millisecond):
+		}
+		return code, retErr
+	}
+
 	// Read response frames.
 	dec := json.NewDecoder(conn)
 	for {
 		var resp daemonResp
 		if err := dec.Decode(&resp); err != nil {
-			// Unblock stdin writer if the connection is already dead.
-			_ = conn.Close()
-			<-stdinDone
 			if err == io.EOF {
-				return -1, nil
+				return finish(-1, nil)
 			}
-			return -1, err
+			return finish(-1, err)
 		}
 
 		switch resp.Type {
@@ -115,15 +130,10 @@ func execViaDaemon(profile string, args []string) (int, error) {
 				os.Stderr.Write(payload)
 			}
 		case "exit":
-			// Stop stdin streaming if the remote finished early.
-			_ = conn.Close()
-			<-stdinDone
-			return resp.Code, nil
+			return finish(resp.Code, nil)
 		case "error":
-			_ = conn.Close()
-			<-stdinDone
 			fmt.Fprintln(os.Stderr, resp.Msg)
-			return -1, nil
+			return finish(-1, nil)
 		}
 	}
 }
