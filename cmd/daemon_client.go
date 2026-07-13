@@ -72,11 +72,12 @@ func execViaDaemon(profile, cmd string) (int, error) {
 	}
 }
 
-// sftpViaDaemon asks the daemon to start SFTP proxy, returns port and fingerprint.
-func sftpViaDaemon(profile, bindAddr string, port int) (int, string, error) {
+// sftpViaDaemon asks the daemon to start SFTP proxy.
+// Returns port, fingerprint, and the daemon PID that owns the mount.
+func sftpViaDaemon(profile, bindAddr string, port int) (int, string, int, error) {
 	conn, err := dialDaemon(profile)
 	if err != nil {
-		return 0, "", err
+		return 0, "", 0, err
 	}
 	defer conn.Close()
 
@@ -87,16 +88,16 @@ func sftpViaDaemon(profile, bindAddr string, port int) (int, string, error) {
 	dec := json.NewDecoder(conn)
 	var resp daemonResp
 	if err := dec.Decode(&resp); err != nil {
-		return 0, "", err
+		return 0, "", 0, err
 	}
 
 	if resp.Type == "error" {
-		return 0, "", fmt.Errorf("%s", resp.Msg)
+		return 0, "", 0, fmt.Errorf("%s", resp.Msg)
 	}
 	if resp.Type != "mounted" {
-		return 0, "", fmt.Errorf("unexpected response: %s", resp.Type)
+		return 0, "", 0, fmt.Errorf("unexpected response: %s", resp.Type)
 	}
-	return resp.Port, resp.Fingerprint, nil
+	return resp.Port, resp.Fingerprint, resp.Pid, nil
 }
 
 // stopDaemon tells the daemon to shutdown.

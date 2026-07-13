@@ -19,7 +19,7 @@ func init() {
 func SftpStart(name, bindAddr string, port int) {
 	// If a daemon is already running, ask it to start SFTP proxy.
 	if daemonRunning(name) {
-		port, fingerprint, err := sftpViaDaemon(name, bindAddr, port)
+		port, fingerprint, daemonPid, err := sftpViaDaemon(name, bindAddr, port)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, i18n.T("sftp.failed")+"\n", err)
 			os.Exit(1)
@@ -29,8 +29,11 @@ func SftpStart(name, bindAddr string, port int) {
 		if fingerprint != "" {
 			fmt.Fprintf(os.Stderr, "  SSH fingerprint: %s\n", fingerprint)
 		}
-		// Write state file so --sftp-stop finds it.
-		sftpproxy.SaveState(name, port, bindAddr, os.Getpid(), fingerprint)
+		// Record the daemon PID (not this client) so --sftp-stop can fall back correctly.
+		if daemonPid == 0 {
+			daemonPid = os.Getpid() // last resort; should not happen
+		}
+		sftpproxy.SaveState(name, port, bindAddr, daemonPid, fingerprint)
 		return
 	}
 

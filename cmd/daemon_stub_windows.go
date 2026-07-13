@@ -56,8 +56,8 @@ func execViaDaemon(profile, cmd string) (int, error) {
 	return -1, fmt.Errorf("not supported on Windows")
 }
 
-func sftpViaDaemon(profile, bindAddr string, port int) (int, string, error) {
-	return 0, "", fmt.Errorf("not supported on Windows")
+func sftpViaDaemon(profile, bindAddr string, port int) (int, string, int, error) {
+	return 0, "", 0, fmt.Errorf("not supported on Windows")
 }
 
 func dialDaemon(profile string) (net.Conn, error) {
