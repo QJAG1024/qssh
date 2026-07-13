@@ -19,6 +19,7 @@ import (
 	"qssh/internal"
 	"qssh/sftpproxy"
 	"qssh/sshclient"
+	"qssh/store"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -101,8 +102,13 @@ func (w *connWriter) writeJSON(resp daemonResp) error {
 }
 
 type daemon struct {
-	profile   string
-	mode      daemonMode
+	profile string
+	mode    daemonMode
+	store   *store.Store
+
+	// sshMu guards the live SSH session/client used by exec and SFTP.
+	sshMu     sync.Mutex
+	session   *sshclient.Session
 	sshClient *ssh.Client
 
 	mu           sync.Mutex
@@ -112,25 +118,29 @@ type daemon struct {
 	sftpListener net.Listener
 	idleTimeout  time.Duration
 	idleTimer    *time.Timer
+	stopKeepalive chan struct{}
+	stopOnce      sync.Once
 }
+
+const sshKeepaliveInterval = 30 * time.Second
 
 // --- Daemon lifecycle ---
 
 func RunDaemon(profile string, modeStr string) {
 	mode := daemonMode(modeStr)
-	store, err := openStore()
+	st, err := openStore()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
-	p, exists := store.Get(profile)
+	p, exists := st.Get(profile)
 	if !exists {
 		fmt.Fprintf(os.Stderr, "profile %q not found\n", profile)
 		os.Exit(1)
 	}
 
-	session, err := sshclient.DialProfile(p, store.Get, internal.NopProgress)
+	session, err := sshclient.DialProfile(p, st.Get, internal.NopProgress)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "connect: %v\n", err)
 		os.Exit(1)
@@ -164,23 +174,31 @@ func RunDaemon(profile string, modeStr string) {
 	os.WriteFile(daemonPidPath(profile), []byte(fmt.Sprintf("%d", os.Getpid())), 0600)
 
 	d := &daemon{
-		profile:     profile,
-		mode:        mode,
-		sshClient:   session.Client(),
-		activeConns: make(map[string]*connState),
+		profile:       profile,
+		mode:          mode,
+		store:         st,
+		session:       session,
+		sshClient:     session.Client(),
+		activeConns:   make(map[string]*connState),
+		stopKeepalive: make(chan struct{}),
 	}
+	defer d.closeSSH()
 
 	if mode == daemonManaged {
 		d.idleTimeout = 5 * time.Minute
 		d.idleTimer = time.AfterFunc(d.idleTimeout, func() {
 			d.mu.Lock()
 			n := len(d.activeConns)
+			sftp := d.sftpRunning
 			d.mu.Unlock()
-			if n == 0 {
+			if n == 0 && !sftp {
+				d.stop()
 				os.Exit(0)
 			}
 		})
 	}
+
+	go d.keepaliveLoop()
 
 	connID := 0
 	for {
@@ -195,6 +213,114 @@ func RunDaemon(profile string, modeStr string) {
 		id := fmt.Sprintf("conn-%d", connID)
 		connID++
 		go d.handleConn(id, conn)
+	}
+}
+
+// closeSSH tears down the current SSH session and jump hops.
+func (d *daemon) closeSSH() {
+	d.sshMu.Lock()
+	defer d.sshMu.Unlock()
+	d.invalidateLocked()
+}
+
+func (d *daemon) invalidateLocked() {
+	if d.session != nil {
+		d.session.Close()
+	}
+	d.session = nil
+	d.sshClient = nil
+}
+
+// redialLocked opens a fresh SSH connection. Caller must hold sshMu.
+// Refuses while SFTP is mounted — that path still holds the old client.
+func (d *daemon) redialLocked() (*ssh.Client, error) {
+	d.mu.Lock()
+	sftp := d.sftpRunning
+	d.mu.Unlock()
+	if sftp {
+		return nil, fmt.Errorf("ssh connection dead while SFTP is mounted; unmount and retry")
+	}
+
+	d.invalidateLocked()
+
+	p, ok := d.store.Get(d.profile)
+	if !ok {
+		return nil, fmt.Errorf("profile %q not found", d.profile)
+	}
+	session, err := sshclient.DialProfile(p, d.store.Get, internal.NopProgress)
+	if err != nil {
+		return nil, err
+	}
+	d.session = session
+	d.sshClient = session.Client()
+	return d.sshClient, nil
+}
+
+// client returns a live SSH client, redialing once if needed.
+func (d *daemon) client() (*ssh.Client, error) {
+	d.sshMu.Lock()
+	defer d.sshMu.Unlock()
+	if d.sshClient != nil {
+		return d.sshClient, nil
+	}
+	return d.redialLocked()
+}
+
+// newSSHSession opens a session, reconnecting once on failure.
+func (d *daemon) newSSHSession() (*ssh.Session, error) {
+	client, err := d.client()
+	if err != nil {
+		return nil, err
+	}
+	s, err := client.NewSession()
+	if err == nil {
+		return s, nil
+	}
+	// Connection likely dropped — reconnect once and retry.
+	d.sshMu.Lock()
+	if d.sshClient == client {
+		d.invalidateLocked()
+	}
+	client, err2 := d.redialLocked()
+	d.sshMu.Unlock()
+	if err2 != nil {
+		return nil, fmt.Errorf("ssh session: %v; reconnect: %w", err, err2)
+	}
+	return client.NewSession()
+}
+
+// keepaliveLoop sends OpenSSH keepalives so idle NAT/firewall paths stay up
+// and dead connections are detected before the next --exec.
+func (d *daemon) keepaliveLoop() {
+	ticker := time.NewTicker(sshKeepaliveInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-d.stopKeepalive:
+			return
+		case <-ticker.C:
+			d.sshMu.Lock()
+			client := d.sshClient
+			d.sshMu.Unlock()
+			if client == nil {
+				// Opportunistic reconnect when idle and no SFTP.
+				d.sshMu.Lock()
+				if d.sshClient == nil {
+					_, _ = d.redialLocked()
+				}
+				d.sshMu.Unlock()
+				continue
+			}
+			// WantReply=true so a dead peer surfaces as an error.
+			ok, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+			if err != nil || !ok {
+				d.sshMu.Lock()
+				if d.sshClient == client {
+					d.invalidateLocked()
+				}
+				d.sshMu.Unlock()
+			}
+		}
 	}
 }
 
@@ -263,7 +389,7 @@ func (d *daemon) handleExec(id string, cmd string, w *connWriter) {
 		d.mu.Unlock()
 	}()
 
-	sshSesh, err := d.sshClient.NewSession()
+	sshSesh, err := d.newSSHSession()
 	if err != nil {
 		_ = w.writeJSON(daemonResp{Type: "error", Msg: err.Error()})
 		return
@@ -274,6 +400,7 @@ func (d *daemon) handleExec(id string, cmd string, w *connWriter) {
 	stderr, _ := sshSesh.StderrPipe()
 
 	if err := sshSesh.Start(cmd); err != nil {
+		// Start can also fail if the connection died between NewSession and Start.
 		_ = w.writeJSON(daemonResp{Type: "error", Msg: err.Error()})
 		return
 	}
@@ -359,12 +486,33 @@ func (d *daemon) handleMount(w *connWriter, req daemonReq) {
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 
-	// Create sftp client from existing SSH connection.
-	sfClient, err := sftp.NewClient(d.sshClient)
+	// Create sftp client from existing SSH connection (reconnect if needed).
+	sshClient, err := d.client()
 	if err != nil {
 		listener.Close()
-		_ = w.writeJSON(daemonResp{Type: "error", Msg: "sftp: " + err.Error()})
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: "ssh: " + err.Error()})
 		return
+	}
+	sfClient, err := sftp.NewClient(sshClient)
+	if err != nil {
+		// Try one reconnect if the session is stale.
+		d.sshMu.Lock()
+		if d.sshClient == sshClient {
+			d.invalidateLocked()
+		}
+		sshClient, err2 := d.redialLocked()
+		d.sshMu.Unlock()
+		if err2 != nil {
+			listener.Close()
+			_ = w.writeJSON(daemonResp{Type: "error", Msg: "sftp: " + err.Error()})
+			return
+		}
+		sfClient, err = sftp.NewClient(sshClient)
+		if err != nil {
+			listener.Close()
+			_ = w.writeJSON(daemonResp{Type: "error", Msg: "sftp: " + err.Error()})
+			return
+		}
 	}
 
 	d.mu.Lock()
@@ -448,7 +596,14 @@ func (d *daemon) handleStop(w *connWriter) {
 	d.shutdown()
 }
 
+func (d *daemon) stop() {
+	d.stopOnce.Do(func() {
+		close(d.stopKeepalive)
+	})
+}
+
 func (d *daemon) shutdown() {
+	d.stop()
 	// Send SIGTERM to self — the defer in RunDaemon cleans up.
 	process, _ := os.FindProcess(os.Getpid())
 	process.Signal(syscall.SIGTERM)
