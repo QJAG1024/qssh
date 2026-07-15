@@ -18,6 +18,7 @@ import (
 	"github.com/pkg/sftp"
 
 	"qssh/internal"
+	"qssh/internal/privacy"
 	"qssh/sftpproxy"
 	"qssh/sshclient"
 	"qssh/store"
@@ -147,7 +148,7 @@ func RunDaemon(profile string, modeStr string) {
 
 	session, err := sshclient.DialProfile(p, st.Get, internal.NopProgress)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "connect: %v\n", err)
+		fmt.Fprintf(os.Stderr, "connect: %s\n", privacy.Error(err))
 		os.Exit(1)
 	}
 
@@ -405,7 +406,7 @@ func (d *daemon) handleExec(id string, req daemonReq, w *connWriter, dec *json.D
 
 	sshSesh, err := d.newSSHSession()
 	if err != nil {
-		_ = w.writeJSON(daemonResp{Type: "error", Msg: err.Error()})
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: privacy.Error(err)})
 		return
 	}
 	defer sshSesh.Close()
@@ -415,7 +416,7 @@ func (d *daemon) handleExec(id string, req daemonReq, w *connWriter, dec *json.D
 
 	stdin, err := sshSesh.StdinPipe()
 	if err != nil {
-		_ = w.writeJSON(daemonResp{Type: "error", Msg: "stdin pipe: " + err.Error()})
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: "stdin pipe: " + privacy.Error(err)})
 		return
 	}
 	stdout, _ := sshSesh.StdoutPipe()
@@ -424,7 +425,7 @@ func (d *daemon) handleExec(id string, req daemonReq, w *connWriter, dec *json.D
 	if err := sshSesh.Start(cmd); err != nil {
 		stdin.Close()
 		// Start can also fail if the connection died between NewSession and Start.
-		_ = w.writeJSON(daemonResp{Type: "error", Msg: err.Error()})
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: privacy.Error(err)})
 		return
 	}
 
@@ -574,7 +575,7 @@ func (d *daemon) handleMount(w *connWriter, req daemonReq) {
 
 	signer, err := sftpproxy.LoadHostKey(cfgDir)
 	if err != nil {
-		_ = w.writeJSON(daemonResp{Type: "error", Msg: "host key: " + err.Error()})
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: "host key: " + privacy.Error(err)})
 		return
 	}
 
@@ -583,7 +584,7 @@ func (d *daemon) handleMount(w *connWriter, req daemonReq) {
 	// Listen on random port.
 	listener, err := net.Listen("tcp", net.JoinHostPort(bindAddr, portStr))
 	if err != nil {
-		_ = w.writeJSON(daemonResp{Type: "error", Msg: "listen: " + err.Error()})
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: "listen: " + privacy.Error(err)})
 		return
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
@@ -592,7 +593,7 @@ func (d *daemon) handleMount(w *connWriter, req daemonReq) {
 	sshClient, err := d.client()
 	if err != nil {
 		listener.Close()
-		_ = w.writeJSON(daemonResp{Type: "error", Msg: "ssh: " + err.Error()})
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: "ssh: " + privacy.Error(err)})
 		return
 	}
 	sfClient, err := sftp.NewClient(sshClient)
@@ -606,13 +607,13 @@ func (d *daemon) handleMount(w *connWriter, req daemonReq) {
 		d.sshMu.Unlock()
 		if err2 != nil {
 			listener.Close()
-			_ = w.writeJSON(daemonResp{Type: "error", Msg: "sftp: " + err.Error()})
+			_ = w.writeJSON(daemonResp{Type: "error", Msg: "sftp: " + privacy.Error(err)})
 			return
 		}
 		sfClient, err = sftp.NewClient(sshClient)
 		if err != nil {
 			listener.Close()
-			_ = w.writeJSON(daemonResp{Type: "error", Msg: "sftp: " + err.Error()})
+			_ = w.writeJSON(daemonResp{Type: "error", Msg: "sftp: " + privacy.Error(err)})
 			return
 		}
 	}

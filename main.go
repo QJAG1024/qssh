@@ -9,9 +9,23 @@ import (
 	"qssh/cmd"
 	"qssh/internal"
 	"qssh/internal/i18n"
+	"qssh/internal/privacy"
 )
 
 var version = "dev"
+
+// privacyFlagValue accepts bare --privacy (status) or --privacy=on|off|clear.
+type privacyFlagValue struct {
+	present bool
+	value   string
+}
+
+func (p *privacyFlagValue) String() string { return p.value }
+func (p *privacyFlagValue) Set(s string) error {
+	p.present = true
+	p.value = s
+	return nil
+}
 
 func main() {
 	// Load config and apply locale override before any command runs.
@@ -55,6 +69,8 @@ func main() {
 		listJSON       bool
 		forceYes       bool
 		showVer        bool
+		reveal         bool
+		privFlag       privacyFlagValue
 	)
 
 	flag.StringVar(&addName, "add", "", "Create a new profile")
@@ -91,16 +107,34 @@ func main() {
 	flag.BoolVar(&forceYes, "yes", false, "Skip confirmation prompts (agent-friendly)")
 	flag.BoolVar(&forceYes, "y", false, "Short for --yes")
 	flag.BoolVar(&showVer, "version", false, "Print version")
+	flag.BoolVar(&reveal, "reveal", false, "Show hosts/IPs for this process only (does not change sticky privacy)")
+	flag.Var(&privFlag, "privacy", "Privacy mode: on|off|clear|status (sticky until reboot; bare --privacy = status)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, i18n.T("usage.text"), version)
 	}
+	os.Args = normalizePrivacyArgs(os.Args)
 	flag.Parse()
+
+	// --reveal is process-local and takes effect before any command output.
+	if reveal {
+		privacy.RevealOnce()
+	}
 
 	optsMap := parseOptionsString(addOptionsStr)
 
 	switch {
 	case showVer:
 		fmt.Printf("qssh %s\n", version)
+		return
+	case privFlag.present:
+		args := []string{}
+		switch strings.ToLower(privFlag.value) {
+		case "", "status":
+			// print status only
+		default:
+			args = []string{privFlag.value}
+		}
+		cmd.Privacy(args)
 		return
 	case daemonRunName != "":
 		mode := "persistent"
@@ -194,6 +228,29 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+}
+
+
+// normalizePrivacyArgs rewrites:
+//   --privacy           -> --privacy=status
+//   --privacy on|off... -> --privacy=on|off...
+// so flag.Var always receives a value (works with space-separated form).
+func normalizePrivacyArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--privacy" {
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				out = append(out, "--privacy="+args[i+1])
+				i++
+				continue
+			}
+			out = append(out, "--privacy=status")
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 func connectCmd(name string) { cmd.Connect(name) }

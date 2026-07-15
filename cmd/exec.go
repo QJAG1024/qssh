@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"qssh/internal"
+	"qssh/internal/privacy"
 )
 
 // Exec connects to a profile, runs a command, and exits with the remote exit code.
@@ -28,7 +29,7 @@ func Exec(name string, args []string) {
 	if !daemonRunning(name) {
 		// Auto-start a managed daemon.
 		if err := startManagedDaemon(name); err != nil {
-			fmt.Fprintf(os.Stderr, "exec: %v\n", err)
+			fmt.Fprintf(os.Stderr, "exec: %s\n", privacy.Error(err))
 			os.Exit(1)
 		}
 	}
@@ -43,7 +44,7 @@ func Exec(name string, args []string) {
 	})
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "exec via daemon: %v\n", err)
+		fmt.Fprintf(os.Stderr, "exec via daemon: %s\n", privacy.Error(err))
 		os.Exit(1)
 	}
 	os.Exit(code)

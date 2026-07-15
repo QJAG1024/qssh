@@ -71,8 +71,13 @@ var enUS = map[string]string{
 	// Connection
 	"connect.failed":        "Connection failed.",
 	"connect.ended":         "Session ended: %v",
-	"profile.header":        "Profile: %s (%s@%s:%d)",
-	"session.closed":        "  ⚡ Connection closed (%s)",
+	"profile.header":         "Profile: %s (%s@%s:%d)",
+	"profile.header_private": "Profile: %s (%s)",
+	"session.closed":         "  ⚡ Connection closed (%s)",
+	"privacy.status":         "privacy: %s (source: %s)",
+	"privacy.set":            "privacy sticky set to %s (until reboot)",
+	"privacy.cleared":        "privacy sticky cleared (default: on)",
+	"privacy.usage":          "Usage: qssh --privacy [on|off|clear|status]",
 
 	// Config
 	"config.usage.get":      "Usage: qssh --config get <key>",

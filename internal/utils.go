@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"qssh/internal/i18n"
+	"qssh/internal/privacy"
 	"golang.org/x/term"
 )
 
@@ -177,7 +178,12 @@ func RenderProgress(r StepResult) {
 }
 
 // RenderProfileHeader prints the connection header with profile info.
+// Host is redacted when privacy mode is on.
 func RenderProfileHeader(name string, user string, host string, port int) {
+	if privacy.Enabled() {
+		fmt.Fprintf(os.Stderr, i18n.T("profile.header_private")+"\n", name, privacy.UserAt(user, host, port))
+		return
+	}
 	fmt.Fprintf(os.Stderr, i18n.T("profile.header")+"\n", name, user, host, port)
 }
 

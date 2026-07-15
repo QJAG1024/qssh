@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"qssh/internal/i18n"
+	"qssh/internal/privacy"
 	"qssh/store"
 )
 
@@ -15,7 +16,7 @@ import (
 // Secrets (password, key passphrase) are never included.
 type listJSON struct {
 	Name            string            `json:"name"`
-	Host            string            `json:"host"`
+	Host            string            `json:"host,omitempty"`
 	Port            int               `json:"port"`
 	User            string            `json:"user"`
 	Auth            string            `json:"auth"`
@@ -54,10 +55,10 @@ func List(filter string, asJSON bool) {
 
 	if asJSON {
 		out := make([]listJSON, 0, len(profiles))
+		hideHost := privacy.Enabled()
 		for _, p := range profiles {
 			item := listJSON{
 				Name:            p.Name,
-				Host:            p.Host,
 				Port:            p.Port,
 				User:            p.User,
 				Auth:            string(p.Auth),
@@ -69,6 +70,10 @@ func List(filter string, asJSON bool) {
 				UpdatedAt:       p.UpdatedAt,
 				ConnectionCount: p.ConnectionCount,
 			}
+			if !hideHost {
+				item.Host = p.Host
+			}
+			// When privacy is on, omit host (empty + omitempty).
 			if !p.LastUsed.IsZero() {
 				t := p.LastUsed
 				item.LastUsed = &t
@@ -94,8 +99,15 @@ func List(filter string, asJSON bool) {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, i18n.T("list.header.name")+"\t"+i18n.T("list.header.host")+"\t"+i18n.T("list.header.port")+"\t"+i18n.T("list.header.user")+"\t"+i18n.T("list.header.auth")+"\t"+i18n.T("list.header.last_used")+"\t"+i18n.T("list.header.count")+"\t"+i18n.T("list.header.proxy"))
-	fmt.Fprintln(w, "----\t----\t----\t----\t----\t---------\t-----\t-----")
+	hideHost := privacy.Enabled()
+	if hideHost {
+		// Privacy: hide Host column entirely (profile name is the identity).
+		fmt.Fprintln(w, i18n.T("list.header.name")+"\t"+i18n.T("list.header.port")+"\t"+i18n.T("list.header.user")+"\t"+i18n.T("list.header.auth")+"\t"+i18n.T("list.header.last_used")+"\t"+i18n.T("list.header.count")+"\t"+i18n.T("list.header.proxy"))
+		fmt.Fprintln(w, "----\t----\t----\t----\t---------\t-----\t-----")
+	} else {
+		fmt.Fprintln(w, i18n.T("list.header.name")+"\t"+i18n.T("list.header.host")+"\t"+i18n.T("list.header.port")+"\t"+i18n.T("list.header.user")+"\t"+i18n.T("list.header.auth")+"\t"+i18n.T("list.header.last_used")+"\t"+i18n.T("list.header.count")+"\t"+i18n.T("list.header.proxy"))
+		fmt.Fprintln(w, "----\t----\t----\t----\t----\t---------\t-----\t-----")
+	}
 
 	for _, p := range profiles {
 		lastUsed := "-"
@@ -106,8 +118,13 @@ func List(filter string, asJSON bool) {
 		if p.Proxy != "" {
 			proxy = p.Proxy
 		}
-		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\t%s\n",
-			p.Name, p.Host, p.Port, p.User, p.Auth, lastUsed, p.ConnectionCount, proxy)
+		if hideHost {
+			fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%d\t%s\n",
+				p.Name, p.Port, p.User, p.Auth, lastUsed, p.ConnectionCount, proxy)
+		} else {
+			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\t%s\n",
+				p.Name, p.Host, p.Port, p.User, p.Auth, lastUsed, p.ConnectionCount, proxy)
+		}
 	}
 	w.Flush()
 }

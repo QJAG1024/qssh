@@ -7,6 +7,7 @@ import (
 
 	"qssh/internal"
 	"qssh/internal/i18n"
+	"qssh/internal/privacy"
 	"qssh/sshclient"
 	"qssh/store"
 )
@@ -30,14 +31,14 @@ func Connect(name string) {
 	session, err := dialProfile(p, s)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, i18n.T("connect.failed"))
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		fmt.Fprintf(os.Stderr, "%s\n", privacy.Error(err))
 		os.Exit(1)
 	}
 	defer session.Close()
 
 	startTime := time.Now()
 	if err := session.InteractiveShell(os.Stdin, os.Stdout, os.Stderr, internal.RenderProgress); err != nil {
-		fmt.Fprintf(os.Stderr, "\n"+i18n.T("connect.ended")+"\n", err)
+		fmt.Fprintf(os.Stderr, "\n"+i18n.T("connect.ended")+"\n", privacy.Error(err))
 	}
 
 	duration := time.Since(startTime)

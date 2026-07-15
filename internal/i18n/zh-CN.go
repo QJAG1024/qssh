@@ -71,8 +71,13 @@ var zhCN = map[string]string{
 	// Connection
 	"connect.failed":        "连接失败",
 	"connect.ended":         "会话结束: %v",
-	"profile.header":        "配置: %s (%s@%s:%d)",
-	"session.closed":        "  ⚡ 连接已关闭 (%s)",
+	"profile.header":         "配置: %s (%s@%s:%d)",
+	"profile.header_private": "配置: %s (%s)",
+	"session.closed":         "  ⚡ 连接已关闭 (%s)",
+	"privacy.status":         "隐私模式: %s（来源: %s）",
+	"privacy.set":            "隐私模式粘性设置为 %s（重启前有效）",
+	"privacy.cleared":        "隐私模式粘性已清除（默认: 开启）",
+	"privacy.usage":          "用法: qssh --privacy [on|off|clear|status]",
 
 	// Config
 	"config.usage.get":      "用法: qssh --config get <key>",

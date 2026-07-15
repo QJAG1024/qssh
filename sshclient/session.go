@@ -13,6 +13,7 @@ import (
 
 	"qssh/internal"
 	"qssh/internal/i18n"
+	"qssh/internal/privacy"
 	"qssh/store"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -50,7 +51,7 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 	// DNS resolve
 	progress(internal.StepResult{
 		ID: internal.StepDNSResolve, Status: internal.StepRunning,
-		Message: i18n.T("resolving", p.Host),
+		Message: i18n.T("resolving", privacy.Host(p.Host)),
 	})
 	resolveStart := time.Now()
 	resolvedAddr, err := net.ResolveIPAddr("ip", p.Host)
@@ -65,7 +66,7 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 	resolveDone := time.Since(resolveStart)
 	progress(internal.StepResult{
 		ID: internal.StepDNSResolve, Status: internal.StepDone,
-		Detail: i18n.T("dns_resolve.detail", p.Host, resolvedAddr, resolveDone.Milliseconds()),
+		Detail: i18n.T("dns_resolve.detail", privacy.Host(p.Host), privacy.Host(resolvedAddr.String()), resolveDone.Milliseconds()),
 	})
 
 	// Host key callback
@@ -97,7 +98,7 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 	// TCP + SSH handshake
 	progress(internal.StepResult{
 		ID: internal.StepTCPConnect, Status: internal.StepRunning,
-		Message: i18n.T("connecting", addr),
+		Message: i18n.T("connecting", privacy.Addr(addr)),
 	})
 	connectStart := time.Now()
 	client, err := ssh.Dial("tcp", addr, config)
@@ -333,7 +334,7 @@ func DialViaProxy(p store.Profile, proxyClient *ssh.Client, targetAddr string, p
 
 	progress(internal.StepResult{
 		ID: internal.StepProxyConnect, Status: internal.StepRunning,
-		Message: i18n.T("proxy.tunneling", proxyClient.RemoteAddr().String(), targetAddr),
+		Message: i18n.T("proxy.tunneling", privacy.Addr(proxyClient.RemoteAddr().String()), privacy.Addr(targetAddr)),
 	})
 
 	proxyConn, err := proxyClient.Dial("tcp", targetAddr)
@@ -349,7 +350,7 @@ func DialViaProxy(p store.Profile, proxyClient *ssh.Client, targetAddr string, p
 
 	progress(internal.StepResult{
 		ID: internal.StepProxyConnect, Status: internal.StepDone,
-		Message: i18n.T("proxy.handshake", proxyClient.RemoteAddr().String()),
+		Message: i18n.T("proxy.handshake", privacy.Addr(proxyClient.RemoteAddr().String())),
 	})
 
 	client := ssh.NewClient(sshConn, chans, reqs)
@@ -400,7 +401,7 @@ func dialViaProxyChain(p store.Profile, lookup ProfileLookup, progress internal.
 		addr := net.JoinHostPort(target.Host, fmt.Sprintf("%d", target.Port))
 		progress(internal.StepResult{
 			ID: internal.StepProxyConnect, Status: internal.StepRunning,
-			Message: i18n.T("proxy.tunneling", proxyClient.RemoteAddr().String(), addr),
+			Message: i18n.T("proxy.tunneling", privacy.Addr(proxyClient.RemoteAddr().String()), privacy.Addr(addr)),
 		})
 		tunnel, err := proxyClient.Dial("tcp", addr)
 		if err != nil {
@@ -598,17 +599,19 @@ func HostKeyCallback(_, addr string) (ssh.HostKeyCallback, error) {
 		}
 		if len(keyErr.Want) > 0 {
 			// Want contains existing keys — mismatch, possible MITM.
-			return fmt.Errorf("host key mismatch for %s: %w", hostname, err)
+			return fmt.Errorf("host key mismatch for %s: %w", privacy.Host(hostname), err)
 		}
 		// Want is empty — unknown host.
 		fp := ssh.FingerprintSHA256(key)
+		displayHost := privacy.Host(hostname)
 		if mode == "strict" {
-			return fmt.Errorf("unknown host key for %s (%s); hostkey.mode=strict rejects first-use", hostname, fp)
+			return fmt.Errorf("unknown host key for %s (%s); hostkey.mode=strict rejects first-use", displayHost, fp)
 		}
 		// TOFU: log fingerprint for audit, then accept and persist.
 		// stderr is visible for interactive connect; daemon forks discard stderr,
 		// so also append to hostkey.log under the config dir.
-		msg := fmt.Sprintf("host key accepted (TOFU): %s %s %s", hostname, key.Type(), fp)
+		// Host is redacted when privacy mode is on (display + audit log).
+		msg := fmt.Sprintf("host key accepted (TOFU): %s %s %s", displayHost, key.Type(), fp)
 		fmt.Fprintln(os.Stderr, msg)
 		if logPath := hostKeyAuditLog(); logPath != "" {
 			if lf, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); err == nil {
