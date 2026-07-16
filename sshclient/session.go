@@ -143,7 +143,8 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 	s.sshSession = sshSesh
 	defer sshSesh.Close()
 
-	// Attempt raw mode if stdin is a terminal
+	// Attempt raw mode if stdin is a terminal.
+	// Local raw mode is client-side (keystrokes); remote PTY modes are separate.
 	var rawFd int = -1
 	var oldState *term.State
 	if f, ok := stdin.(*os.File); ok {
@@ -157,43 +158,36 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 		}
 	}
 
-	// Get terminal size
-	width, height := 80, 24
-	if rawFd >= 0 {
-		w, h, err := term.GetSize(rawFd)
-		if err == nil && w > 0 && h > 0 {
-			width, height = w, h
-		}
-	}
+	width, height := terminalSize(rawFd)
 
-	// Request PTY — prefer the local TERM, but fall back to a widely
-	// available entry so remote systems with a minimal terminfo database
-	// (e.g. Debian/PVE) don't complain about a missing one.
-	termEnv := os.Getenv("TERM")
-	switch termEnv {
-	case "xterm", "linux", "vt100":
-		// in ncurses-base, available everywhere
-	default:
-		// xterm-256color is in ncurses-term (not guaranteed),
-		// xterm is in ncurses-base and always present.
-		termEnv = "xterm"
-	}
-	modes := ssh.TerminalModes{
-		ssh.ECHO:          1,
-		ssh.TTY_OP_ISPEED: 14400,
-		ssh.TTY_OP_OSPEED: 14400,
-	}
+	// TERM: passthrough local value by default so TUI apps (docker compose, etc.)
+	// see the same capabilities as a native OpenSSH session. Escape hatch:
+	//   qssh --config set term.mode compat
+	// forces a minimal terminfo entry for hosts without ncurses-term.
+	termEnv := resolveTermEnv()
+	modes := defaultPTYModes()
 
 	progress(internal.StepResult{
 		ID: internal.StepAllocatePTY, Status: internal.StepRunning,
 	})
 	if err := sshSesh.RequestPty(termEnv, height, width, modes); err != nil {
-		progress(internal.StepResult{
-			ID: internal.StepAllocatePTY, Status: internal.StepFailed,
-			Message: i18n.T("pty_allocate.failed", err),
-		})
-		return fmt.Errorf("request pty: %w", err)
+		// If a fancy TERM is unknown on the server, retry once with xterm.
+		if termEnv != "xterm" {
+			if err2 := sshSesh.RequestPty("xterm", height, width, modes); err2 == nil {
+				termEnv = "xterm"
+				err = nil
+			}
+		}
+		if err != nil {
+			progress(internal.StepResult{
+				ID: internal.StepAllocatePTY, Status: internal.StepFailed,
+				Message: i18n.T("pty_allocate.failed", err),
+			})
+			return fmt.Errorf("request pty: %w", err)
+		}
 	}
+	// Re-assert winsize after pty-req (some servers ignore initial size).
+	_ = sshSesh.WindowChange(height, width)
 	progress(internal.StepResult{
 		ID: internal.StepAllocatePTY, Status: internal.StepDone,
 	})
@@ -203,7 +197,13 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 	sshSesh.Stdout = stdout
 	sshSesh.Stderr = stderr
 
-	// Apply SetEnv options
+	// Best-effort env: keep TERM/COLORTERM aligned even if pty-req name differs.
+	_ = sshSesh.Setenv("TERM", termEnv)
+	if color := os.Getenv("COLORTERM"); color != "" {
+		_ = sshSesh.Setenv("COLORTERM", color)
+	}
+
+	// Apply profile SetEnv options
 	setSessionEnv(sshSesh, s.profile)
 
 	// Start shell
@@ -217,6 +217,8 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 		})
 		return fmt.Errorf("shell: %w", err)
 	}
+	// Once more after shell start — helps TUIs that query size on first paint.
+	_ = sshSesh.WindowChange(height, width)
 	progress(internal.StepResult{
 		ID: internal.StepShellStart, Status: internal.StepDone,
 		Message: i18n.T("session.ready"),
@@ -242,7 +244,9 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 			}
 			if isWinch {
 				onWindowChange(rawFd, func(h, w int) {
-					sshSesh.WindowChange(h, w)
+					if h > 0 && w > 0 {
+						_ = sshSesh.WindowChange(h, w)
+					}
 				})
 				continue
 			}
@@ -251,13 +255,66 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 			if sig == syscall.SIGTERM {
 				sshSig = ssh.SIGTERM
 			}
-			sshSesh.Signal(sshSig)
+			_ = sshSesh.Signal(sshSig)
 		}
 	}()
 
 	// Wait for session to end
 	err = sshSesh.Wait()
 	return err
+}
+
+// resolveTermEnv picks the PTY $TERM string for RequestPty.
+// Default is passthrough of the local TERM (OpenSSH-like).
+// term.mode=compat forces a widely-available entry for broken remote terminfo.
+func resolveTermEnv() string {
+	mode := ""
+	if cfg := internal.OpenConfig(internal.DefaultConfigPath()); cfg != nil {
+		mode = strings.ToLower(strings.TrimSpace(cfg.Get("term.mode")))
+	}
+	local := strings.TrimSpace(os.Getenv("TERM"))
+	if mode == "compat" {
+		// Minimal set present in ncurses-base on almost every distro.
+		switch local {
+		case "xterm", "linux", "vt100":
+			return local
+		default:
+			return "xterm"
+		}
+	}
+	if local == "" {
+		return "xterm-256color"
+	}
+	return local
+}
+
+// terminalSize returns a sane PTY size. Never returns 0x0 (breaks TUIs).
+func terminalSize(rawFd int) (width, height int) {
+	width, height = 80, 24
+	if rawFd >= 0 {
+		if w, h, err := term.GetSize(rawFd); err == nil && w > 0 && h > 0 {
+			return w, h
+		}
+	}
+	return width, height
+}
+
+// defaultPTYModes is a compact OpenSSH-like mode set for interactive shells.
+// Local MakeRaw remains client-side; these apply to the remote PTY.
+func defaultPTYModes() ssh.TerminalModes {
+	return ssh.TerminalModes{
+		ssh.ECHO:          1,
+		ssh.ECHOE:         1,
+		ssh.ECHOK:         1,
+		ssh.ECHONL:        0,
+		ssh.ICANON:        1,
+		ssh.ISIG:          1,
+		ssh.ICRNL:         1,
+		ssh.OPOST:         1,
+		ssh.ONLCR:         1,
+		ssh.TTY_OP_ISPEED: 14400,
+		ssh.TTY_OP_OSPEED: 14400,
+	}
 }
 
 // Client returns the underlying SSH client, for use by SFTP etc.

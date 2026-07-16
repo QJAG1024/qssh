@@ -11,7 +11,7 @@ func windowChangeSignals() []syscall.Signal {
 }
 
 // onWindowChange handles terminal resize. On Windows this is a no-op
-// since SIGWINCH is not available.
-func onWindowChange(rawFd int, resizeFn func(w, h int)) {
+// since SIGWINCH is not available. Signature is (height, width).
+func onWindowChange(rawFd int, resizeFn func(h, w int)) {
 	// No-op on Windows
 }
