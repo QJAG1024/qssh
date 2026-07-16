@@ -45,6 +45,8 @@ type plainData struct {
 
 // New opens or initializes the credential store.
 // If the store file doesn't exist, it creates an empty encrypted store.
+// When the store file exists, the keyring is told not to mint a new master key
+// (avoids silent re-keying when the login keyring is locked after reboot).
 func New(storePath string, kr *keyring.Keyring) (*Store, error) {
 	s := &Store{
 		path:     storePath,
@@ -52,7 +54,8 @@ func New(storePath string, kr *keyring.Keyring) (*Store, error) {
 		profiles: make(map[string]Profile),
 	}
 	if _, err := os.Stat(storePath); os.IsNotExist(err) {
-		// New store — ensure directory exists, save empty, done.
+		// Brand-new store — allow key minting, ensure directory exists.
+		kr.SetStoreExists(false)
 		dir := filepath.Dir(storePath)
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return nil, fmt.Errorf("create store dir: %w", err)
@@ -60,7 +63,8 @@ func New(storePath string, kr *keyring.Keyring) (*Store, error) {
 		s.dirty = true
 		return s, nil
 	}
-	// Existing store — load and decrypt.
+	// Existing encrypted store — never generate a replacement key.
+	kr.SetStoreExists(true)
 	if err := s.load(); err != nil {
 		return nil, fmt.Errorf("load store: %w", err)
 	}
@@ -368,6 +372,13 @@ func decrypt(key []byte, nonceB64, dataB64 string) ([]byte, error) {
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, err
+	}
+	// Guard before Open — wrong nonce size panics inside crypto/cipher.
+	if len(nonce) != gcm.NonceSize() {
+		return nil, fmt.Errorf("decrypt failed: invalid nonce size %d (want %d)", len(nonce), gcm.NonceSize())
+	}
+	if len(ciphertext) < gcm.Overhead() {
+		return nil, fmt.Errorf("decrypt failed: ciphertext too short")
 	}
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {

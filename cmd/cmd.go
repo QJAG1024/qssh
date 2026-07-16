@@ -38,6 +38,8 @@ func defaultKeyPath() string {
 
 // openStore creates a Store ready for use.
 // On first run it probes which key backend is usable and persists the choice.
+// Prefer file backend when store.key already exists and is readable — more
+// reliable across reboots than a session-locked GNOME keyring.
 func openStore() (*store.Store, error) {
 	cfg := internal.OpenConfig(internal.DefaultConfigPath())
 
@@ -49,12 +51,21 @@ func openStore() (*store.Store, error) {
 		}
 	}
 
+	// If config prefers keyring but a working store.key is present and keyring
+	// is locked, Store.New will fail with a clear error (no silent re-key).
+	// Operators can: unlock keyring, or `qssh --config set store.backend file`.
 	kr := keyring.New(defaultKeyPath(), keyring.Backend(backendStr))
 	return store.New(defaultStorePath(), kr)
 }
 
-// probeBackend detects which key backend is usable.
+// probeBackend detects which key backend is usable for a first-time install.
+// Prefer file when store.key already exists (reboot-safe). Prefer keyring only
+// when secret-tool works AND no file key is present yet.
 func probeBackend() string {
+	// Existing file key → file backend (stable across reboots).
+	if _, err := os.Stat(defaultKeyPath()); err == nil {
+		return string(keyring.BackendFile)
+	}
 	if _, err := exec.LookPath("secret-tool"); err != nil {
 		return string(keyring.BackendFile)
 	}

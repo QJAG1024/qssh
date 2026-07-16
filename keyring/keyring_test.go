@@ -6,13 +6,21 @@ import (
 	"testing"
 )
 
+// isolatePATH removes secret-tool from PATH so tests don't hit the real keyring.
+func isolatePATH(t *testing.T) {
+	t.Helper()
+	// Empty dir first so LookPath finds nothing.
+	t.Setenv("PATH", t.TempDir())
+}
+
 func TestKeyring_FileBased(t *testing.T) {
+	isolatePATH(t)
 	dir := t.TempDir()
 	keyPath := filepath.Join(dir, "store.key")
 
 	kr := New(keyPath, BackendFile)
 
-	// First call: should generate and store a new key.
+	// First call: should generate and store a new key (no store yet).
 	key1, err := kr.Get()
 	if err != nil {
 		t.Fatalf("first Get: %v", err)
@@ -26,7 +34,18 @@ func TestKeyring_FileBased(t *testing.T) {
 		t.Fatal("key file was not created")
 	}
 
-	// Second call: should read the same key back.
+	// Second call on same instance: cached.
+	key1b, err := kr.Get()
+	if err != nil {
+		t.Fatalf("cached Get: %v", err)
+	}
+	for i := range key1 {
+		if key1[i] != key1b[i] {
+			t.Fatal("cached key differs")
+		}
+	}
+
+	// New instance: should read the same key back.
 	kr2 := New(keyPath, BackendFile)
 	key2, err := kr2.Get()
 	if err != nil {
@@ -42,7 +61,25 @@ func TestKeyring_FileBased(t *testing.T) {
 	}
 }
 
+func TestKeyring_RefuseGenerateWhenStoreExists(t *testing.T) {
+	isolatePATH(t)
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "store.key")
+
+	kr := New(keyPath, BackendFile)
+	kr.SetStoreExists(true)
+
+	_, err := kr.Get()
+	if err == nil {
+		t.Fatal("expected error refusing to generate when store exists")
+	}
+	if _, statErr := os.Stat(keyPath); !os.IsNotExist(statErr) {
+		t.Fatal("must not write store.key when refusing generate")
+	}
+}
+
 func TestKeyring_GenerateUniqueKeys(t *testing.T) {
+	isolatePATH(t)
 	dir := t.TempDir()
 
 	kr1 := New(filepath.Join(dir, "k1"), BackendFile)
@@ -65,6 +102,7 @@ func TestKeyring_GenerateUniqueKeys(t *testing.T) {
 }
 
 func TestKeyring_InvalidHexFile(t *testing.T) {
+	isolatePATH(t)
 	dir := t.TempDir()
 	keyPath := filepath.Join(dir, "store.key")
 
@@ -75,5 +113,27 @@ func TestKeyring_InvalidHexFile(t *testing.T) {
 	_, err := kr.Get()
 	if err == nil {
 		t.Fatal("expected error for invalid hex, got nil")
+	}
+}
+
+func TestKeyring_CacheStable(t *testing.T) {
+	isolatePATH(t)
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "store.key")
+	kr := New(keyPath, BackendFile)
+	k1, err := kr.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Corrupt the on-disk key; cache must still return original.
+	os.WriteFile(keyPath, []byte("00"), 0600)
+	k2, err := kr.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range k1 {
+		if k1[i] != k2[i] {
+			t.Fatal("Get after disk corruption should still return cached key")
+		}
 	}
 }

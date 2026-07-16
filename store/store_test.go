@@ -301,3 +301,36 @@ func TestStore_AtomicSaveNoTempLeft(t *testing.T) {
 		}
 	}
 }
+
+func TestStore_RefuseNewKeyWhenEncryptedExists(t *testing.T) {
+	// Isolate secret-tool so migration cannot "save" the open.
+	t.Setenv("PATH", t.TempDir())
+
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "store.json")
+	keyPath := filepath.Join(dir, "store.key")
+
+	// Create a real encrypted store with one profile.
+	kr1 := keyring.New(keyPath, keyring.BackendFile)
+	s1, err := New(storePath, kr1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s1.Add(Profile{Name: "x", Host: "h", Port: 22, User: "u", Auth: AuthPassword, Password: "p"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wipe the key file — simulates lost key / locked keyring with no file backup.
+	os.Remove(keyPath)
+
+	// Opening the existing store must fail, not mint a new key.
+	kr2 := keyring.New(keyPath, keyring.BackendFile)
+	_, err = New(storePath, kr2)
+	if err == nil {
+		t.Fatal("expected error when key is missing but store exists")
+	}
+	// Must not have written a new key either.
+	if _, e := os.Stat(keyPath); !os.IsNotExist(e) {
+		t.Fatal("must not mint store.key when open fails")
+	}
+}

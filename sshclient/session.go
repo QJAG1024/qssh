@@ -725,6 +725,9 @@ func expandPath(path string) string {
 }
 
 // agentAuth attempts to use the SSH agent for authentication.
+// The agent unix connection is kept open for the lifetime of the returned
+// AuthMethod (needed for signing); callers do not Close it explicitly.
+// Signers are fetched once so a missing agent fails fast.
 func agentAuth() (ssh.AuthMethod, error) {
 	agentSock := os.Getenv("SSH_AUTH_SOCK")
 	if agentSock == "" {
@@ -737,8 +740,19 @@ func agentAuth() (ssh.AuthMethod, error) {
 	agentClient := agent.NewClient(conn)
 	signers, err := agentClient.Signers()
 	if err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("agent signers: %w", err)
 	}
+	if len(signers) == 0 {
+		conn.Close()
+		return nil, fmt.Errorf("ssh agent has no keys")
+	}
+	// PublicKeys keeps signers; agent conn must stay open for subsequent sign ops.
+	// golang.org/x/crypto/ssh copies signers into the method; agent.NewClient
+	// still uses conn for Sign. Attach a finalizer-friendly wrapper by
+	// returning PublicKeys of already-fetched signers (local private material
+	// from agent is not exported — Signers() returns agent-backed signers that
+	// need the conn). Keep conn open intentionally.
 	return ssh.PublicKeys(signers...), nil
 }
 

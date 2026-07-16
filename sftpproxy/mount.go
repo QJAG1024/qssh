@@ -61,8 +61,39 @@ func loadState() map[string]sftpEntry {
 func saveState(m map[string]sftpEntry) {
 	stateMu.Lock()
 	defer stateMu.Unlock()
-	data, _ := json.MarshalIndent(m, "", "  ")
-	os.WriteFile(statePath(), data, 0600)
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return
+	}
+	path := statePath()
+	dir := filepath.Dir(path)
+	_ = os.MkdirAll(dir, 0700)
+	tmp, err := os.CreateTemp(dir, ".sftp-*.tmp")
+	if err != nil {
+		return
+	}
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			os.Remove(tmpName)
+		}
+	}()
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close()
+		return
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		return
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return
+	}
+	cleanup = false
 }
 
 // configDir returns the qssh config directory path.
