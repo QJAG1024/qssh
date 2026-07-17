@@ -1,5 +1,11 @@
-<h1 align="center">QSSH</h1>
-<h3 align="center">终端中的简单快速的SSH凭据管理器</h3>
+<div align="center">
+
+<h1>QSSH</h1>
+<h3>终端中的简单快速的SSH凭据管理器</h3>
+
+中文 | [English](./README.en.md)
+
+</div>
 
 ```
 qjag186@QJAG-Legion-EOS ~> ./qssh homelab
@@ -66,79 +72,44 @@ go build -o qssh .
 ./qssh --exec myserver "systemctl status sshd"
 ```
 
-首次执行时自动启动托管守护进程（managed daemon），保持 SSH 连接复用。后续调用瞬间完成，无需重复认证。守护进程空闲 5 分钟后自动退出，无需手动清理。
+首次执行时自动启动托管守护进程（managed daemon），保持 SSH 连接复用。后续调用瞬间完成，无需重复认证。守护进程空闲 5 分钟后自动退出。
 
 特别适合 AI agent、脚本、自动化场景——只需调用 `--exec`，其余由工具管理。
 
 ### 远程文件访问（SFTP 代理）
 
-启动本地 SFTP 透明代理，可作为远程 SFTP 的中转。任何 SFTP 客户端均可连接使用（FileZilla、Cyberduck、`sftp` 命令行等）。
+启动本地 SFTP 透明代理，任何 SFTP 客户端均可连接使用。
 
 ```bash
-# 启动 SFTP 代理（监听随机端口）
 ./qssh --sftp-start myserver
-
-# 指定绑定地址
-./qssh --sftp-start myserver --bind 127.0.0.1
-
-# 指定端口
-./qssh --sftp-start myserver --bind 127.0.0.1 --port 22222
-
-# 停止 SFTP 代理
 ./qssh --sftp-stop myserver
 ```
 
-代理接受任意密码作认证（透明转发），SSH 连接复用已有通道。
-
-如果后台守护进程正在运行，SFTP 代理会自动复用守护进程的连接。
-
 ### 守护进程（后台连接复用）
-
-守护进程保持 SSH 连接不断开，其他操作可以复用该连接，省去重复认证的开销。
-
-**两种模式：**
 
 | 模式 | 说明 |
 |---|---|
-| `managed`（托管） | `--exec` 自动启动，空闲 5 分钟自动退出，无需手动管理 |
+| `managed`（托管） | `--exec` 自动启动，空闲 5 分钟自动退出 |
 | `persistent`（持久） | 手动 `--daemon-start` / `--daemon-stop`，长期驻留 |
 
-```bash
-# 启动持久守护进程
-./qssh --daemon-start myserver
+### 更多功能
 
-# 复用守护进程执行命令或启动 SFTP
-./qssh --exec myserver "uptime"
-./qssh --sftp-start myserver
+- **跳板机**：配置 `--proxy` 自动走多级跳板
+- **隐私模式**：默认对 UI 输出中主机/IP 脱敏，可通过 `--reveal` 临时查看
+- **Agent 友好**：`--yes` 跳过确认、`--list --json` 机器可读输出、`--exec` 支持 stdin 管道
+- **主机密钥**：TOFU（首次使用时接受）并记录指纹审计日志
 
-# 停止持久守护进程
-./qssh --daemon-stop myserver
-```
+## 完整文档
 
-托管模式无需显式启动/停止守护进程——`--exec` 会自动处理。多次连续调用时复用同一连接，效率更高。
-
-### 管理
-
-```bash
-./qssh --list [filter]              # 列出凭据，可选关键词过滤
-./qssh --edit myserver              # 修改凭据
-./qssh --delete myserver            # 删除凭据
-./qssh --config [get|set ...]       # 查看或修改设置
-./qssh --sftp-start myserver        # 启动 SFTP 代理
-./qssh --sftp-stop myserver         # 停止 SFTP 代理
-./qssh --exec myserver <cmd>        # 远程执行命令
-./qssh --daemon-start myserver      # 启动后台守护进程
-./qssh --daemon-stop myserver       # 停止后台守护进程
-./qssh --version                    # 查看版本
-```
+所有命令、配置键、架构说明请见[文档](docs/zh-cn/README.md)。
 
 ## 数据存储
 
-- 凭据文件: `~/.config/qssh/store.json`（AES-256-GCM 加密）
-- 主密钥: 优先用 `secret-tool`（GNOME Keyring），回退到 `~/.config/qssh/key`
+- 凭据: `~/.config/qssh/store.json`（AES-256-GCM 加密）
+- 主密钥: `~/.config/qssh/store.key` 或 GNOME Keyring（`secret-tool`）
 - 已知主机: `~/.config/qssh/known_hosts`
 - 守护进程: `~/.config/qssh/<profile>.sock`（Unix socket）
-- SFTP 状态: `~/.config/qssh/sftp.json`
+- 配置: `~/.config/qssh/config.json`
 
 ## 依赖
 
