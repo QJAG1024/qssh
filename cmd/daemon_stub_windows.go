@@ -64,6 +64,10 @@ func dialDaemon(profile string) (net.Conn, error) {
 	return nil, fmt.Errorf("not supported on Windows")
 }
 
+func stopDaemon(profile string) error {
+	return fmt.Errorf("not supported on Windows")
+}
+
 // --- Socket helpers (used by forkDaemon, which is !windows) ---
 // Keep as stubs since they may be referenced in dead code paths.
 
