@@ -6,10 +6,12 @@ import (
 
 	"qssh/internal"
 	"qssh/internal/i18n"
+	"qssh/sftpproxy"
 )
 
 // Delete removes a profile after confirmation.
 // When force is true (--yes/-y), skips the interactive prompt (agent-friendly).
+// Stops any running daemon for the profile first.
 func Delete(name string, force bool) {
 	s, err := openStore()
 	if err != nil {
@@ -28,6 +30,17 @@ func Delete(name string, force bool) {
 			return
 		}
 	}
+
+	// Revoke any running daemon — an authenticated session should not outlive
+	// the profile that authorized it.
+	if daemonRunning(name) {
+		_ = stopDaemon(name)
+	}
+	// Clean up leftover socket/pid files whether daemon was running or not.
+	_ = os.Remove(daemonSocketPath(name))
+	_ = os.Remove(daemonPidPath(name))
+	// Also stop SFTP if mounted for this profile.
+	_ = sftpproxy.Stop(name)
 
 	if err := s.Delete(name); err != nil {
 		fmt.Fprintf(os.Stderr, i18n.T("profile.save_error")+"\n", err)

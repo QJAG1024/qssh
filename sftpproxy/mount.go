@@ -181,8 +181,8 @@ func Start(name, bindAddr string, port int) error {
 	// Timeout — clean up orphaned daemon and its state.
 	st := loadState()
 	if entry, ok := st[name]; ok {
-		if proc, err := os.FindProcess(entry.PID); err == nil {
-			proc.Kill()
+		if err := internal.SafePID(entry.PID); err == nil {
+			_ = internal.GracefulStop(entry.PID)
 		}
 		delete(st, name)
 		saveState(st)
@@ -280,12 +280,9 @@ func Stop(name string) error {
 		return fmt.Errorf("profile %q is not running", name)
 	}
 
-	// Kill daemon.
-	proc, err := os.FindProcess(entry.PID)
-	if err == nil {
-		proc.Signal(syscall.SIGTERM)
-		time.Sleep(200 * time.Millisecond)
-		proc.Kill()
+	// Kill daemon — validate PID before signaling.
+	if err := internal.SafePID(entry.PID); err == nil {
+		_ = internal.GracefulStop(entry.PID)
 	}
 
 	delete(state, name)

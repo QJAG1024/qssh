@@ -678,10 +678,12 @@ func HostKeyCallback(_, addr string) (ssh.HostKeyCallback, error) {
 		}
 		f, openErr := os.OpenFile(khPath, os.O_APPEND|os.O_WRONLY, 0600)
 		if openErr != nil {
-			return nil // Accept even if we can't save
+			return fmt.Errorf("cannot persist host key to %s: %w", khPath, openErr)
 		}
 		defer f.Close()
-		f.WriteString(knownhosts.Line(normalized, key) + "\n")
+		if _, err := f.WriteString(knownhosts.Line(normalized, key) + "\n"); err != nil {
+			return fmt.Errorf("cannot write host key to %s: %w", khPath, err)
+		}
 		return nil
 	}, nil
 }
