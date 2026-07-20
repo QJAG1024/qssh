@@ -3,7 +3,6 @@ package store
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -338,9 +337,6 @@ func TestStore_RefuseNewKeyWhenEncryptedExists(t *testing.T) {
 }
 
 func TestStore_ConcurrentAddNoLostUpdate(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows named-mutex stress test is unstable under 16 goroutines; locking still works for normal CLI use")
-	}
 	dir := t.TempDir()
 	keyPath := filepath.Join(dir, "store.key")
 	storePath := filepath.Join(dir, "store.json")

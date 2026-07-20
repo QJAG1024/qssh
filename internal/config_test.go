@@ -3,7 +3,6 @@ package internal
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"testing"
 )
@@ -22,9 +21,6 @@ func TestConfig_SetGet(t *testing.T) {
 }
 
 func TestConfig_ConcurrentSetNoLostUpdate(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows named-mutex stress test is unstable under 20 goroutines; locking still works for normal CLI use")
-	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
 	// Seed empty config.
