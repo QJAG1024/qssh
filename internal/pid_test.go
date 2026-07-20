@@ -15,11 +15,10 @@ func TestGracefulStop_KillsProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	pid := cmd.Process.Pid
-	st, err := processStartTime(pid)
-	if err != nil {
-		t.Fatalf("starttime: %v", err)
+	id := ProcessIdentity{PID: pid}
+	if st, err := processStartTime(pid); err == nil {
+		id.StartTime = st
 	}
-	id := ProcessIdentity{PID: pid, StartTime: st}
 
 	start := time.Now()
 	if err := GracefulStopIdent(id); err != nil {
@@ -45,11 +44,12 @@ func TestMatchIdentity_StartTimeMismatch(t *testing.T) {
 	if err := MatchIdentity(id); err != nil {
 		t.Fatalf("self identity: %v", err)
 	}
-	// Wrong starttime must fail.
-	id.StartTime = 1
+	// If starttime is unavailable, we cannot test start-time mismatch.
 	if id.StartTime == 0 {
 		t.Skip("starttime unavailable")
 	}
+	// Wrong starttime must fail.
+	id.StartTime = 1
 	// Re-read true starttime and set a fake one
 	trueID := CurrentIdentity()
 	if trueID.StartTime == 0 {

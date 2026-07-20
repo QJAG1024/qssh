@@ -7,36 +7,34 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // processStartTime returns the best-effort process start time on non-Linux
-// Unix systems. It uses "ps -o lstart=" and parses the locale-independent
-// format produced by macOS/BSD ps.
+// Unix systems. A reliable cross-Unix start-time is hard to obtain without
+// cgo / libproc, so we treat it as unavailable. This causes callers to fall
+// back to executable-path matching for PID identity.
 func processStartTime(pid int) (uint64, error) {
-	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "lstart=").Output()
-	if err != nil {
-		return 0, fmt.Errorf("ps lstart: %w", err)
-	}
-	layout := "Mon Jan _2 15:04:05 2006"
-	t, err := time.Parse(layout, strings.TrimSpace(string(out)))
-	if err != nil {
-		return 0, err
-	}
-	// Use Unix seconds as the portable identifier.
-	return uint64(t.Unix()), nil
+	_ = pid
+	return 0, fmt.Errorf("process start time unavailable on this platform")
 }
 
-// processExe returns the executable path or name for a process on non-Linux
-// Unix systems. It tries lsof first (full path on macOS/BSD), then falls back
-// to ps comm= (basename).
+// processExe returns the executable path for a process on non-Linux Unix
+// systems. It uses lsof and looks for the text (code) file descriptor, which
+// gives the full binary path on macOS/BSD. If lsof fails, it falls back to
+// ps comm= (basename only).
 func processExe(pid int) (string, error) {
 	out, err := exec.Command("lsof", "-p", strconv.Itoa(pid), "-Fn").Output()
 	if err == nil {
+		// lsof -Fn output groups file descriptors. The executable is marked
+		// with an "ftxt" line; the following "n" line is the full path.
+		next := false
 		for _, line := range strings.Split(string(out), "\n") {
 			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "n") {
+			if next && strings.HasPrefix(line, "n") {
 				return strings.TrimPrefix(line, "n"), nil
+			}
+			if line == "ftxt" {
+				next = true
 			}
 		}
 	}
