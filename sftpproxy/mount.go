@@ -93,7 +93,7 @@ func saveState(m map[string]sftpEntry) {
 	if err := tmp.Close(); err != nil {
 		return
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := internal.ReplaceFile(tmpName, path); err != nil {
 		return
 	}
 	cleanup = false

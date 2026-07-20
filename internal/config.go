@@ -32,6 +32,16 @@ func DefaultConfigPath() string {
 // readers can fail closed instead of silently using defaults.
 func OpenConfig(path string) *Config {
 	c := &Config{path: path, data: map[string]string{}}
+
+	// Hold the cross-process lock while reading so that concurrent
+	// writers do not hold a handle/lock on the file.
+	fl, err := Lock(path)
+	if err != nil {
+		c.loadErr = fmt.Errorf("lock config: %w", err)
+		return c
+	}
+	defer fl.Unlock()
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -159,7 +169,7 @@ func (c *Config) saveLocked() error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpName, c.path); err != nil {
+	if err := ReplaceFile(tmpName, c.path); err != nil {
 		return err
 	}
 	cleanup = false

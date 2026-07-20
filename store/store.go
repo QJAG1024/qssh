@@ -54,22 +54,25 @@ func New(storePath string, kr *keyring.Keyring) (*Store, error) {
 		keyring:  kr,
 		profiles: make(map[string]Profile),
 	}
-	if _, err := os.Stat(storePath); os.IsNotExist(err) {
-		// Brand-new store — allow key minting, ensure directory exists.
-		kr.SetStoreExists(false)
-		dir := filepath.Dir(storePath)
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			return nil, fmt.Errorf("create store dir: %w", err)
+	// Guard the whole initialization so concurrent first-time creation and
+	// loading do not race on the directory or the store file.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s, s.withFileLock(func() error {
+		if _, err := os.Stat(storePath); os.IsNotExist(err) {
+			// Brand-new store — allow key minting, ensure directory exists.
+			kr.SetStoreExists(false)
+			dir := filepath.Dir(storePath)
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				return fmt.Errorf("create store dir: %w", err)
+			}
+			s.dirty = true
+			return nil
 		}
-		s.dirty = true
-		return s, nil
-	}
-	// Existing encrypted store — never generate a replacement key.
-	kr.SetStoreExists(true)
-	if err := s.load(); err != nil {
-		return nil, fmt.Errorf("load store: %w", err)
-	}
-	return s, nil
+		// Existing encrypted store — never generate a replacement key.
+		kr.SetStoreExists(true)
+		return s.load()
+	})
 }
 
 // Add inserts a new profile. Returns error if name already exists.
@@ -383,7 +386,7 @@ func (s *Store) save() error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp store: %w", err)
 	}
-	if err := os.Rename(tmpName, s.path); err != nil {
+	if err := internal.ReplaceFile(tmpName, s.path); err != nil {
 		return fmt.Errorf("replace store: %w", err)
 	}
 	cleanup = false

@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"qssh/internal"
 )
 
 // Backend selects the key storage backend.
@@ -284,7 +286,7 @@ func (k *Keyring) setInFile(key []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpName, k.fallbackPath); err != nil {
+	if err := internal.ReplaceFile(tmpName, k.fallbackPath); err != nil {
 		return err
 	}
 	cleanup = false

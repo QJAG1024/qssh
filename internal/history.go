@@ -107,9 +107,14 @@ func AppendHistory(entry *HistoryEntry) error {
 	if err != nil {
 		return fmt.Errorf("open history: %w", err)
 	}
-	defer f.Close()
 
 	if _, err := f.Write(append(data, '\n')); err != nil {
+		_ = f.Close()
+		return err
+	}
+	// Close the append handle before trim rewrites the file; otherwise
+	// Windows keeps the file locked and the rename in trim fails.
+	if err := f.Close(); err != nil {
 		return err
 	}
 
@@ -178,7 +183,7 @@ func trimHistoryBySize(path string, maxBytes int64) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := ReplaceFile(tmpName, path); err != nil {
 		return err
 	}
 	cleanup = false
