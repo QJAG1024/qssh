@@ -11,14 +11,14 @@ import (
 	"syscall"
 	"time"
 
-	"qssh/internal"
-	"qssh/internal/i18n"
-	"qssh/internal/privacy"
-	"qssh/store"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 	"golang.org/x/term"
+	"qssh/internal"
+	"qssh/internal/i18n"
+	"qssh/internal/privacy"
+	"qssh/store"
 )
 
 // Session wraps an SSH connection with PTY management.
@@ -606,47 +606,77 @@ func AuthMethodsForProfile(p store.Profile) ([]ssh.AuthMethod, error) {
 }
 
 // hostKeyMode returns the configured host-key policy: "tofu" (default) or "strict".
-// Config key: hostkey.mode
-func hostKeyMode() string {
+// Config key: hostkey.mode. Unknown or empty values default to tofu; only the
+// explicit value "strict" enables strict mode. Malformed values that look like
+// an attempt at a security mode (anything other than tofu/strict/empty) are
+// treated as a hard error so a typo cannot silently weaken policy.
+// A corrupt config file also fails closed (cannot silently drop strict→tofu).
+func hostKeyMode() (string, error) {
 	cfg := internal.OpenConfig(internal.DefaultConfigPath())
 	if cfg == nil {
-		return "tofu"
+		return "tofu", nil
+	}
+	if err := cfg.LoadError(); err != nil {
+		return "", fmt.Errorf("hostkey.mode unavailable: %w", err)
 	}
 	mode := strings.ToLower(strings.TrimSpace(cfg.Get("hostkey.mode")))
 	switch mode {
+	case "", "tofu":
+		return "tofu", nil
 	case "strict":
-		return "strict"
+		return "strict", nil
 	default:
-		return "tofu"
+		return "", fmt.Errorf("invalid hostkey.mode %q (supported: tofu, strict)", mode)
 	}
 }
 
 // HostKeyCallback returns an ssh.HostKeyCallback that uses a known_hosts file.
 // Default policy is TOFU (accept on first use) with fingerprint logged to stderr.
 // Set hostkey.mode=strict in config to reject unknown hosts.
+// TOFU persistence is fail-closed: lock, re-check, write, fsync, and close must
+// all succeed or the connection is aborted. Host identity is port-scoped
+// ([host]:port) so distinct SSH ports do not share a key entry.
 func HostKeyCallback(_, addr string) (ssh.HostKeyCallback, error) {
 	khPath := knownHostsFile()
-	os.MkdirAll(filepath.Dir(khPath), 0700)
-
-	if _, err := os.Stat(khPath); os.IsNotExist(err) {
-		os.WriteFile(khPath, nil, 0600)
+	if err := os.MkdirAll(filepath.Dir(khPath), 0700); err != nil {
+		return nil, fmt.Errorf("known_hosts dir: %w", err)
 	}
 
-	callback, err := knownhosts.New(khPath)
-	if err != nil {
-		return nil, err
-	}
-
-	// Build normalized addresses for writing to known_hosts.
+	// Port-scoped identity only — do NOT also write bare hostname entries,
+	// which would let host:22 and host:2222 share the same TOFU identity.
 	normalized := []string{knownhosts.Normalize(addr)}
-	if hostOnly, _, err := net.SplitHostPort(addr); err == nil && hostOnly != addr {
-		normalized = append(normalized, knownhosts.Normalize(hostOnly))
-	}
 
-	mode := hostKeyMode()
+	mode, modeErr := hostKeyMode()
+	if modeErr != nil {
+		return nil, modeErr
+	}
 
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-		err := callback(hostname, remote, key)
+		// Hold a cross-process lock for the full check+append so two concurrent
+		// first-use connections cannot each accept a different key.
+		fl, err := internal.Lock(khPath)
+		if err != nil {
+			return fmt.Errorf("lock known_hosts: %w", err)
+		}
+		defer fl.Unlock()
+
+		// Ensure the file exists under the lock; use O_CREATE without O_TRUNC
+		// so a concurrent first-use writer cannot be overwritten with an
+		// empty file. If another process created it, we just open it.
+		if _, err := os.Stat(khPath); os.IsNotExist(err) {
+			f, err := os.OpenFile(khPath, os.O_CREATE|os.O_WRONLY, 0600)
+			if err != nil {
+				return fmt.Errorf("create known_hosts: %w", err)
+			}
+			_ = f.Close()
+		}
+
+		// Re-load under the lock so concurrent first-use writers are visible.
+		callback, err := knownhosts.New(khPath)
+		if err != nil {
+			return fmt.Errorf("reload known_hosts: %w", err)
+		}
+		err = callback(hostname, remote, key)
 		if err == nil {
 			return nil // Key is known and matches
 		}
@@ -680,9 +710,16 @@ func HostKeyCallback(_, addr string) (ssh.HostKeyCallback, error) {
 		if openErr != nil {
 			return fmt.Errorf("cannot persist host key to %s: %w", khPath, openErr)
 		}
-		defer f.Close()
-		if _, err := f.WriteString(knownhosts.Line(normalized, key) + "\n"); err != nil {
-			return fmt.Errorf("cannot write host key to %s: %w", khPath, err)
+		if _, werr := f.WriteString(knownhosts.Line(normalized, key) + "\n"); werr != nil {
+			f.Close()
+			return fmt.Errorf("cannot write host key to %s: %w", khPath, werr)
+		}
+		if serr := f.Sync(); serr != nil {
+			f.Close()
+			return fmt.Errorf("cannot sync host key to %s: %w", khPath, serr)
+		}
+		if cerr := f.Close(); cerr != nil {
+			return fmt.Errorf("cannot close known_hosts %s: %w", khPath, cerr)
 		}
 		return nil
 	}, nil

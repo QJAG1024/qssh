@@ -20,12 +20,12 @@ const (
 
 // HistoryEntry represents a single connection record.
 type HistoryEntry struct {
-	Timestamp time.Time `json:"ts"`
-	Profile   string    `json:"profile"`
-	Duration  string    `json:"duration,omitempty"` // human-readable, e.g. "42s"
-	DurationMs int64    `json:"duration_ms"`
-	Command   string    `json:"command,omitempty"` // empty for interactive shell
-	ExitCode  int       `json:"exit_code"`
+	Timestamp  time.Time `json:"ts"`
+	Profile    string    `json:"profile"`
+	Duration   string    `json:"duration,omitempty"` // human-readable, e.g. "42s"
+	DurationMs int64     `json:"duration_ms"`
+	Command    string    `json:"command,omitempty"` // empty for interactive shell
+	ExitCode   int       `json:"exit_code"`
 }
 
 // HistoryPath returns the path to the history file.

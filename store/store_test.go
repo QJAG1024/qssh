@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"qssh/keyring"
@@ -333,4 +334,108 @@ func TestStore_RefuseNewKeyWhenEncryptedExists(t *testing.T) {
 	if _, e := os.Stat(keyPath); !os.IsNotExist(e) {
 		t.Fatal("must not mint store.key when open fails")
 	}
+}
+
+func TestStore_ConcurrentAddNoLostUpdate(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "store.key")
+	storePath := filepath.Join(dir, "store.json")
+	// Shared keyring path so all processes/goroutines use same key.
+	kr := keyring.New(keyPath, keyring.BackendFile)
+	s, err := New(storePath, kr)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// Seed so key is minted once.
+	if err := s.Add(Profile{Name: "seed", Host: "h", Port: 22, User: "u", Auth: AuthPassword, Password: "p"}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	const n = 16
+	var wg sync.WaitGroup
+	wg.Add(n)
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			// Each goroutine opens its own Store handle (like separate processes).
+			kr := keyring.New(keyPath, keyring.BackendFile)
+			s, err := New(storePath, kr)
+			if err != nil {
+				errs <- err
+				return
+			}
+			name := "p" + string(rune('a'+i%26)) + string(rune('0'+i/26))
+			// Prefer deterministic names
+			name = "p" + itoa(i)
+			err = s.Add(Profile{Name: name, Host: "h", Port: 22, User: "u", Auth: AuthPassword, Password: "p"})
+			if err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent add: %v", err)
+	}
+
+	// Re-open and count.
+	kr = keyring.New(keyPath, keyring.BackendFile)
+	final, err := New(storePath, kr)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	names := final.List()
+	// seed + n
+	if len(names) != n+1 {
+		t.Fatalf("lost updates: got %d profiles %v, want %d", len(names), names, n+1)
+	}
+}
+
+func TestStore_LoadRejectsInvalidProfileNames(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "store.key")
+	storePath := filepath.Join(dir, "store.json")
+	// Isolate PATH so this test does not hit a real secret-tool.
+	t.Setenv("PATH", t.TempDir())
+	kr := keyring.New(keyPath, keyring.BackendFile)
+	s, err := New(storePath, kr)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := s.Add(Profile{Name: "valid", Host: "h", Port: 22, User: "u", Auth: AuthPassword, Password: "p"}); err != nil {
+		t.Fatalf("add valid: %v", err)
+	}
+	// Bypass validation to simulate a legacy store that contains an
+	// illegal profile name (path traversal / hidden file style).
+	s.profiles["../../etc"] = Profile{Name: "../../etc", Host: "h", Port: 22, User: "u", Auth: AuthPassword, Password: "p"}
+	s.dirty = true
+	if err := s.save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	// Re-opening must fail closed rather than expose an unsafe name.
+	_, err = New(storePath, kr)
+	if err == nil {
+		t.Fatal("expected load to reject invalid profile name")
+	}
+	want := "invalid name"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("expected error to contain %q, got: %v", want, err)
+	}
+}
+
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	var b [12]byte
+	pos := len(b)
+	for i > 0 {
+		pos--
+		b[pos] = byte('0' + i%10)
+		i /= 10
+	}
+	return string(b[pos:])
 }

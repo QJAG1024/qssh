@@ -9,27 +9,27 @@ import (
 type AuthMethod string
 
 const (
-	AuthPassword           AuthMethod = "password"
-	AuthKey                AuthMethod = "key"
-	AuthAgent              AuthMethod = "agent"
+	AuthPassword            AuthMethod = "password"
+	AuthKey                 AuthMethod = "key"
+	AuthAgent               AuthMethod = "agent"
 	AuthKeyboardInteractive AuthMethod = "keyboard-interactive"
 )
 
 // ValidAuthMethods contains all supported auth methods for validation.
 var ValidAuthMethods = map[AuthMethod]bool{
-	AuthPassword:           true,
-	AuthKey:                true,
-	AuthAgent:              true,
+	AuthPassword:            true,
+	AuthKey:                 true,
+	AuthAgent:               true,
 	AuthKeyboardInteractive: true,
 }
 
 // Profile represents a single SSH connection credential profile.
 type Profile struct {
-	Name      string     `json:"name"`
-	Host      string     `json:"host"`
-	Port      int        `json:"port"`
-	User      string     `json:"user"`
-	Auth      AuthMethod `json:"auth"`
+	Name string     `json:"name"`
+	Host string     `json:"host"`
+	Port int        `json:"port"`
+	User string     `json:"user"`
+	Auth AuthMethod `json:"auth"`
 
 	// Password is stored encrypted in the store (AES-256-GCM).
 	Password string `json:"password,omitempty"`

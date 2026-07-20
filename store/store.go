@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"qssh/internal"
 	"qssh/keyring"
 )
 
@@ -72,21 +73,28 @@ func New(storePath string, kr *keyring.Keyring) (*Store, error) {
 }
 
 // Add inserts a new profile. Returns error if name already exists.
+// Holds a cross-process lock and reloads before write so concurrent
+// `qssh --add` invocations cannot lose updates.
 func (s *Store) Add(p Profile) error {
 	if err := p.Validate(); err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, exists := s.profiles[p.Name]; exists {
-		return fmt.Errorf("profile %q already exists (use --edit to modify)", p.Name)
-	}
-	now := time.Now()
-	p.CreatedAt = now
-	p.UpdatedAt = now
-	s.profiles[p.Name] = p
-	s.dirty = true
-	return s.save()
+	return s.withFileLock(func() error {
+		if err := s.reloadLocked(); err != nil {
+			return err
+		}
+		if _, exists := s.profiles[p.Name]; exists {
+			return fmt.Errorf("profile %q already exists (use --edit to modify)", p.Name)
+		}
+		now := time.Now()
+		p.CreatedAt = now
+		p.UpdatedAt = now
+		s.profiles[p.Name] = p
+		s.dirty = true
+		return s.save()
+	})
 }
 
 // Get retrieves a profile by name.
@@ -104,12 +112,16 @@ func (s *Store) Update(name string, p Profile) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, exists := s.profiles[name]; !exists {
-		return fmt.Errorf("profile %q not found", name)
-	}
-	p.UpdatedAt = time.Now()
-	// Preserve CreatedAt, LastUsed, ConnectionCount.
-	if existing, ok := s.profiles[name]; ok {
+	return s.withFileLock(func() error {
+		if err := s.reloadLocked(); err != nil {
+			return err
+		}
+		existing, exists := s.profiles[name]
+		if !exists {
+			return fmt.Errorf("profile %q not found", name)
+		}
+		p.UpdatedAt = time.Now()
+		// Preserve CreatedAt, LastUsed, ConnectionCount.
 		p.CreatedAt = existing.CreatedAt
 		if p.LastUsed.IsZero() {
 			p.LastUsed = existing.LastUsed
@@ -117,22 +129,27 @@ func (s *Store) Update(name string, p Profile) error {
 		if p.ConnectionCount == 0 {
 			p.ConnectionCount = existing.ConnectionCount
 		}
-	}
-	s.profiles[name] = p
-	s.dirty = true
-	return s.save()
+		s.profiles[name] = p
+		s.dirty = true
+		return s.save()
+	})
 }
 
 // Delete removes a profile. Returns error if not found.
 func (s *Store) Delete(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, exists := s.profiles[name]; !exists {
-		return fmt.Errorf("profile %q not found", name)
-	}
-	delete(s.profiles, name)
-	s.dirty = true
-	return s.save()
+	return s.withFileLock(func() error {
+		if err := s.reloadLocked(); err != nil {
+			return err
+		}
+		if _, exists := s.profiles[name]; !exists {
+			return fmt.Errorf("profile %q not found", name)
+		}
+		delete(s.profiles, name)
+		s.dirty = true
+		return s.save()
+	})
 }
 
 // Rename renames a profile in a single atomic save. Returns error if old
@@ -146,23 +163,28 @@ func (s *Store) Rename(oldName, newName string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p, exists := s.profiles[oldName]
-	if !exists {
-		return fmt.Errorf("profile %q not found", oldName)
-	}
-	if _, exists := s.profiles[newName]; exists {
-		return fmt.Errorf("profile %q already exists", newName)
-	}
-	// Validate with the new name before mutating.
-	p.Name = newName
-	if err := p.Validate(); err != nil {
-		return err
-	}
-	p.UpdatedAt = time.Now()
-	delete(s.profiles, oldName)
-	s.profiles[newName] = p
-	s.dirty = true
-	return s.save()
+	return s.withFileLock(func() error {
+		if err := s.reloadLocked(); err != nil {
+			return err
+		}
+		p, exists := s.profiles[oldName]
+		if !exists {
+			return fmt.Errorf("profile %q not found", oldName)
+		}
+		if _, exists := s.profiles[newName]; exists {
+			return fmt.Errorf("profile %q already exists", newName)
+		}
+		// Validate with the new name before mutating.
+		p.Name = newName
+		if err := p.Validate(); err != nil {
+			return err
+		}
+		p.UpdatedAt = time.Now()
+		delete(s.profiles, oldName)
+		s.profiles[newName] = p
+		s.dirty = true
+		return s.save()
+	})
 }
 
 // List returns all profile names sorted alphabetically.
@@ -210,19 +232,48 @@ func (s *Store) Search(query string) []Profile {
 func (s *Store) Touch(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p, ok := s.profiles[name]
-	if !ok {
-		return
-	}
-	p.LastUsed = time.Now()
-	p.ConnectionCount++
-	s.profiles[name] = p
-	s.dirty = true
-	// Best-effort save — don't fail the connection for a save error.
-	_ = s.save()
+	// Best-effort — don't fail the connection for a lock/save error.
+	_ = s.withFileLock(func() error {
+		if err := s.reloadLocked(); err != nil {
+			return err
+		}
+		p, ok := s.profiles[name]
+		if !ok {
+			return nil
+		}
+		p.LastUsed = time.Now()
+		p.ConnectionCount++
+		s.profiles[name] = p
+		s.dirty = true
+		return s.save()
+	})
 }
 
 // --- encryption / persistence ---
+
+// withFileLock runs fn while holding the store's cross-process flock.
+// Caller must already hold s.mu.
+func (s *Store) withFileLock(fn func() error) error {
+	fl, err := internal.Lock(s.path)
+	if err != nil {
+		return fmt.Errorf("lock store: %w", err)
+	}
+	defer fl.Unlock()
+	return fn()
+}
+
+// reloadLocked re-reads the encrypted store from disk into s.profiles.
+// Caller must hold s.mu and the file lock. Missing file is treated as empty.
+func (s *Store) reloadLocked() error {
+	if _, err := os.Stat(s.path); os.IsNotExist(err) {
+		// Brand-new store never written — keep current (likely empty) map.
+		if s.profiles == nil {
+			s.profiles = make(map[string]Profile)
+		}
+		return nil
+	}
+	return s.load()
+}
 
 func (s *Store) load() error {
 	data, err := os.ReadFile(s.path)
@@ -254,6 +305,11 @@ func (s *Store) load() error {
 	s.profiles = pd.Profiles
 	if s.profiles == nil {
 		s.profiles = make(map[string]Profile)
+	}
+	for name := range s.profiles {
+		if err := validateProfileName(name); err != nil {
+			return fmt.Errorf("refuse to load profile with invalid name %q: %w", name, err)
+		}
 	}
 	return nil
 }

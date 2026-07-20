@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"qssh/internal"
 	"qssh/internal/i18n"
@@ -32,15 +33,22 @@ func Delete(name string, force bool) {
 	}
 
 	// Revoke any running daemon — an authenticated session should not outlive
-	// the profile that authorized it.
-	if daemonRunning(name) {
-		_ = stopDaemon(name)
+	// the profile that authorized it. stopDaemon uses force and PID fallback.
+	// If the daemon survives the stop (rare), its keepalive loop will detect
+	// the missing profile within 30s and auto-terminate.
+	if err := stopDaemon(name); err != nil && daemonRunning(name) {
+		fmt.Fprintf(os.Stderr, "warning: could not stop daemon for %q (it will auto-terminate within 30s): %v\n", name, err)
 	}
 	// Clean up leftover socket/pid files whether daemon was running or not.
 	_ = os.Remove(daemonSocketPath(name))
 	_ = os.Remove(daemonPidPath(name))
 	// Also stop SFTP if mounted for this profile.
-	_ = sftpproxy.Stop(name)
+	if err := sftpproxy.Stop(name); err != nil {
+		// "not running" is fine; other errors are warnings (state may be stale).
+		if !strings.Contains(err.Error(), "is not running") {
+			fmt.Fprintf(os.Stderr, "warning: stop sftp for %q: %v\n", name, err)
+		}
+	}
 
 	if err := s.Delete(name); err != nil {
 		fmt.Fprintf(os.Stderr, i18n.T("profile.save_error")+"\n", err)

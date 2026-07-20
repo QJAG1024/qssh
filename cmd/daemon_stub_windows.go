@@ -6,15 +6,18 @@ import (
 	"fmt"
 	"net"
 	"os"
+
+	"qssh/internal"
 )
 
 // --- Types (must exist for sftp_proxy.go references) ---
 
 type daemonReq struct {
-	Type     string `json:"type"`
-	Cmd      string `json:"cmd,omitempty"`
-	BindAddr string `json:"bind_addr,omitempty"`
-	MountPort int   `json:"mount_port,omitempty"`
+	Type      string `json:"type"`
+	Cmd       string `json:"cmd,omitempty"`
+	BindAddr  string `json:"bind_addr,omitempty"`
+	MountPort int    `json:"mount_port,omitempty"`
+	Force     bool   `json:"force,omitempty"`
 }
 
 type daemonResp struct {
@@ -56,8 +59,8 @@ func execViaDaemon(profile string, args []string) (int, error) {
 	return -1, fmt.Errorf("not supported on Windows")
 }
 
-func sftpViaDaemon(profile, bindAddr string, port int) (int, string, int, error) {
-	return 0, "", 0, fmt.Errorf("not supported on Windows")
+func sftpViaDaemon(profile, bindAddr string, port int) (int, string, internal.ProcessIdentity, error) {
+	return 0, "", internal.ProcessIdentity{}, fmt.Errorf("not supported on Windows")
 }
 
 func dialDaemon(profile string) (net.Conn, error) {

@@ -8,6 +8,7 @@ import (
 
 	"qssh/internal"
 	"qssh/internal/i18n"
+	"qssh/sftpproxy"
 	"qssh/store"
 )
 
@@ -26,6 +27,7 @@ func Edit(name string, opts AddOpts) {
 		fmt.Fprintf(os.Stderr, i18n.T("profile.not_found")+"\n", name)
 		os.Exit(1)
 	}
+	orig := p.Copy()
 
 	nonInteractive := opts.Host != "" || opts.User != "" || opts.Auth != "" ||
 		opts.Port > 0 || opts.Password != "" || opts.KeyPath != "" ||
@@ -173,7 +175,35 @@ func Edit(name string, opts AddOpts) {
 		fmt.Fprintf(os.Stderr, i18n.T("profile.save_error")+"\n", err)
 		os.Exit(1)
 	}
+	// Revoke live daemon if connection-defining fields changed so the next
+	// --exec cannot reuse a session authenticated under the old credentials.
+	// If the daemon survives the stop, its keepalive loop detects the
+	// identity change within 30s and auto-terminates.
+	if connectionIdentityChanged(orig, p) {
+		if err := stopDaemon(name); err != nil && daemonRunning(name) {
+			fmt.Fprintf(os.Stderr, "warning: could not stop daemon for %q (it will auto-terminate within 30s): %v\n", name, err)
+		}
+		_ = os.Remove(daemonSocketPath(name))
+		_ = os.Remove(daemonPidPath(name))
+		_ = sftpproxy.Stop(name)
+	}
 	fmt.Printf(i18n.T("profile.updated")+"\n", name)
+}
+
+// connectionIdentityChanged reports whether host/port/user/auth/key/proxy
+// (or the credentials themselves) differ enough that a live daemon session
+// must be discarded.
+func connectionIdentityChanged(a, b store.Profile) bool {
+	if a.Host != b.Host || a.Port != b.Port || a.User != b.User {
+		return true
+	}
+	if a.Auth != b.Auth || a.Proxy != b.Proxy {
+		return true
+	}
+	if a.Password != b.Password || a.KeyPath != b.KeyPath || a.KeyPassphrase != b.KeyPassphrase {
+		return true
+	}
+	return false
 }
 
 // optionString converts a map to a comma-separated KEY=VALUE string for prompting.

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"golang.org/x/term"
+
+	"qssh/internal"
 )
 
 // daemonRunning checks if a daemon socket exists and responds to ping.
@@ -139,11 +141,11 @@ func execViaDaemon(profile string, args []string) (int, error) {
 }
 
 // sftpViaDaemon asks the daemon to start SFTP proxy.
-// Returns port, fingerprint, and the daemon PID that owns the mount.
-func sftpViaDaemon(profile, bindAddr string, port int) (int, string, int, error) {
+// Returns port, fingerprint, and the daemon identity that owns the mount.
+func sftpViaDaemon(profile, bindAddr string, port int) (int, string, internal.ProcessIdentity, error) {
 	conn, err := dialDaemon(profile)
 	if err != nil {
-		return 0, "", 0, err
+		return 0, "", internal.ProcessIdentity{}, err
 	}
 	defer conn.Close()
 
@@ -154,43 +156,113 @@ func sftpViaDaemon(profile, bindAddr string, port int) (int, string, int, error)
 	dec := json.NewDecoder(conn)
 	var resp daemonResp
 	if err := dec.Decode(&resp); err != nil {
-		return 0, "", 0, err
+		return 0, "", internal.ProcessIdentity{}, err
 	}
 
 	if resp.Type == "error" {
-		return 0, "", 0, fmt.Errorf("%s", resp.Msg)
+		return 0, "", internal.ProcessIdentity{}, fmt.Errorf("%s", resp.Msg)
 	}
 	if resp.Type != "mounted" {
-		return 0, "", 0, fmt.Errorf("unexpected response: %s", resp.Type)
+		return 0, "", internal.ProcessIdentity{}, fmt.Errorf("unexpected response: %s", resp.Type)
 	}
-	return resp.Port, resp.Fingerprint, resp.Pid, nil
+	id := internal.ProcessIdentity{PID: resp.Pid, StartTime: resp.StartTime, Exe: resp.Exe}
+	return resp.Port, resp.Fingerprint, id, nil
 }
 
 // stopDaemon tells the daemon to shutdown.
+// Uses force=true so active commands / SFTP cannot block revocation
+// (delete/edit/rename must not leave an authenticated session behind).
+// Falls back to SIGTERM/SIGKILL via PID file if the socket is dead.
 func stopDaemon(profile string) error {
+	var sockErr error
 	conn, err := dialDaemon(profile)
+	if err == nil {
+		req := daemonReq{Type: "stop", Force: true}
+		data, _ := json.Marshal(req)
+		_, _ = conn.Write(append(data, '\n'))
+
+		dec := json.NewDecoder(conn)
+		var resp daemonResp
+		if err := dec.Decode(&resp); err != nil {
+			sockErr = err
+		} else if resp.Type == "error" {
+			sockErr = fmt.Errorf("%s", resp.Msg)
+		} else if resp.Type == "stopped" && resp.Msg != "" {
+			// Legacy non-force response carrying a refusal message.
+			sockErr = fmt.Errorf("%s", resp.Msg)
+		}
+		conn.Close()
+		if sockErr == nil {
+			// Wait briefly for process exit / socket removal.
+			deadline := time.Now().Add(3 * time.Second)
+			for time.Now().Before(deadline) {
+				if !daemonRunning(profile) {
+					cleanupDaemonFiles(profile)
+					return nil
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		}
+	} else {
+		sockErr = err
+	}
+
+	// Force-kill via PID file if socket path failed or daemon still alive.
+	pidErr := killDaemonByPID(profile)
+	if pidErr != nil {
+		// Daemon already cleaned up its own PID file -> stopped successfully.
+		if os.IsNotExist(pidErr) {
+			cleanupDaemonFiles(profile)
+			return nil
+		}
+		// Legacy bare-PID file: do not risk signalling a recycled PID.
+		// Clean up the stale state and report success.
+		if strings.Contains(pidErr.Error(), "lacks start-time/exe identity") {
+			cleanupDaemonFiles(profile)
+			return nil
+		}
+		if sockErr != nil {
+			return fmt.Errorf("stop daemon: socket: %v; pid: %w", sockErr, pidErr)
+		}
+		return fmt.Errorf("stop daemon: pid: %w", pidErr)
+	}
+	cleanupDaemonFiles(profile)
+	return nil
+}
+
+func cleanupDaemonFiles(profile string) {
+	_ = os.Remove(daemonSocketPath(profile))
+	_ = os.Remove(daemonPidPath(profile))
+}
+
+func killDaemonByPID(profile string) error {
+	data, err := os.ReadFile(daemonPidPath(profile))
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-
-	req := daemonReq{Type: "stop"}
-	data, _ := json.Marshal(req)
-	conn.Write(append(data, '\n'))
-
-	dec := json.NewDecoder(conn)
-	var resp daemonResp
-	if err := dec.Decode(&resp); err != nil {
-		return err
+	var pid int
+	if _, err := fmt.Sscanf(string(data), "%d", &pid); err != nil {
+		return fmt.Errorf("parse pid file: %w", err)
 	}
-
-	if resp.Type == "error" {
-		return fmt.Errorf("%s", resp.Msg)
+	id := internal.ProcessIdentity{PID: pid}
+	// Prefer full identity if the pid file contains starttime (pid starttime [exe]).
+	fields := strings.Fields(string(data))
+	if len(fields) >= 2 {
+		var st uint64
+		if _, err := fmt.Sscanf(fields[1], "%d", &st); err == nil {
+			id.StartTime = st
+		}
 	}
-	if resp.Type == "stopped" && resp.Msg != "" {
-		return fmt.Errorf("%s", resp.Msg)
+	if len(fields) >= 3 {
+		id.Exe = fields[2]
 	}
-	return nil
+	// Refuse to signal a bare PID left over from an pre-identity upgrade.
+	// A stale/recycled PID could belong to any user process; only cleanup
+	// files and leave any real daemon alone.
+	if id.StartTime == 0 && id.Exe == "" {
+		return fmt.Errorf("pid file for %q lacks start-time/exe identity; refusing to signal bare PID %d", profile, id.PID)
+	}
+	return internal.GracefulStopIdent(id)
 }
 
 func dialDaemon(profile string) (net.Conn, error) {

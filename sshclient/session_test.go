@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	"qssh/internal"
 	"qssh/store"
-	"golang.org/x/crypto/ssh"
 )
 
 // testHostKey is a static RSA key for the test SSH server.
@@ -91,6 +91,11 @@ func startTestSSHServer(t *testing.T, passwordCallback func(ssh.ConnMetadata, []
 
 // handleSessionReqs replies to PTY and shell requests from the client.
 // Must run in a goroutine.
+// testConfigDir isolates the test from the user's real ~/.config.
+func testConfigDir(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+}
+
 func handleSessionReqs(reqs <-chan *ssh.Request, ch ssh.Channel) {
 	for req := range reqs {
 		switch req.Type {
@@ -105,6 +110,7 @@ func handleSessionReqs(reqs <-chan *ssh.Request, ch ssh.Channel) {
 }
 
 func TestInteractiveShell_IO(t *testing.T) {
+	testConfigDir(t)
 	t.Setenv("QSSH_KNOWN_HOSTS", filepath.Join(t.TempDir(), "known_hosts"))
 
 	addr, _ := startTestSSHServer(t, func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
@@ -172,6 +178,7 @@ func TestInteractiveShell_IO(t *testing.T) {
 }
 
 func TestDial_PasswordAuth_Failure(t *testing.T) {
+	testConfigDir(t)
 	t.Setenv("QSSH_KNOWN_HOSTS", filepath.Join(t.TempDir(), "known_hosts"))
 
 	addr, _ := startTestSSHServer(t, func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
@@ -180,10 +187,10 @@ func TestDial_PasswordAuth_Failure(t *testing.T) {
 
 	host, port, _ := net.SplitHostPort(addr)
 	p := store.Profile{
-		Name: "test",
-		Host: host,
-		User: "testuser",
-		Auth: store.AuthPassword,
+		Name:     "test",
+		Host:     host,
+		User:     "testuser",
+		Auth:     store.AuthPassword,
 		Password: "wrongpass",
 	}
 	fmt.Sscanf(port, "%d", &p.Port)
@@ -196,12 +203,13 @@ func TestDial_PasswordAuth_Failure(t *testing.T) {
 }
 
 func TestDial_Timeout(t *testing.T) {
+	testConfigDir(t)
 	p := store.Profile{
-		Name: "test",
-		Host: "203.0.113.1", // TEST-NET-3, unreachable
-		Port: 22,
-		User: "test",
-		Auth: store.AuthPassword,
+		Name:     "test",
+		Host:     "203.0.113.1", // TEST-NET-3, unreachable
+		Port:     22,
+		User:     "test",
+		Auth:     store.AuthPassword,
 		Password: "test",
 	}
 
@@ -220,6 +228,7 @@ func TestDial_Timeout(t *testing.T) {
 }
 
 func TestAgentAuth_NoAgent(t *testing.T) {
+	testConfigDir(t)
 	// Ensure no SSH agent socket is set
 	t.Setenv("SSH_AUTH_SOCK", "")
 
@@ -230,6 +239,7 @@ func TestAgentAuth_NoAgent(t *testing.T) {
 }
 
 func TestExpandPath(t *testing.T) {
+	testConfigDir(t)
 	if expandPath("~/.ssh/id_rsa") == "~/.ssh/id_rsa" {
 		t.Fatal("expected ~ to be expanded")
 	}
@@ -242,6 +252,7 @@ func TestExpandPath(t *testing.T) {
 }
 
 func TestDial_PasswordAuth_Success(t *testing.T) {
+	testConfigDir(t)
 	t.Setenv("QSSH_KNOWN_HOSTS", filepath.Join(t.TempDir(), "known_hosts"))
 
 	addr, _ := startTestSSHServer(t, func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {

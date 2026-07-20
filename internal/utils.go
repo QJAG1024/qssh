@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/term"
 	"qssh/internal/i18n"
 	"qssh/internal/privacy"
-	"golang.org/x/term"
 )
 
 // Shared buffered reader for stdin — avoids buffering issues with pipes.
@@ -84,7 +84,7 @@ func Confirm(label string, defaultYes bool) bool {
 type StepID int
 
 const (
-	StepDecrypt       StepID = iota
+	StepDecrypt StepID = iota
 	StepDNSResolve
 	StepTCPConnect
 	StepSSHHandshake // version + key exchange + host key verify

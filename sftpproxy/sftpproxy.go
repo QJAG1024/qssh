@@ -25,14 +25,14 @@ type sftpProxy struct {
 
 // compile-time checks
 var (
-	_ sftp.FileReader           = (*sftpProxy)(nil)
-	_ sftp.FileWriter           = (*sftpProxy)(nil)
-	_ sftp.OpenFileWriter       = (*sftpProxy)(nil)
-	_ sftp.FileCmder            = (*sftpProxy)(nil)
-	_ sftp.FileLister           = (*sftpProxy)(nil)
-	_ sftp.LstatFileLister      = (*sftpProxy)(nil)
-	_ sftp.ReadlinkFileLister   = (*sftpProxy)(nil)
-	_ sftp.RealPathFileLister   = (*sftpProxy)(nil)
+	_ sftp.FileReader         = (*sftpProxy)(nil)
+	_ sftp.FileWriter         = (*sftpProxy)(nil)
+	_ sftp.OpenFileWriter     = (*sftpProxy)(nil)
+	_ sftp.FileCmder          = (*sftpProxy)(nil)
+	_ sftp.FileLister         = (*sftpProxy)(nil)
+	_ sftp.LstatFileLister    = (*sftpProxy)(nil)
+	_ sftp.ReadlinkFileLister = (*sftpProxy)(nil)
+	_ sftp.RealPathFileLister = (*sftpProxy)(nil)
 )
 
 func (p *sftpProxy) Fileread(r *sftp.Request) (io.ReaderAt, error) {

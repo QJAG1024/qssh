@@ -36,41 +36,42 @@ func main() {
 	}
 
 	var (
-		addName        string
-		addHost        string
-		addPort        int
-		addUser        string
-		addAuth        string
-		addPassword    string
-		addKeyPath     string
-		addKeyPass     string
-		addProxy       string
-		addOptionsStr  string
-		addTagsStr     string
-		editName       string
-		delName        string
-		copyOld        string
-		renameOld      string
-		historyProfile string
-		historyLast    bool
-		sftpStartName  string
-		sftpBind       string
-		sftpStopName   string
-		execName       string
-		daemonStart    string // --daemon-start
-		daemonStop     string // --daemon-stop
-		sftpDaemon     string // --sftp-daemon (internal)
-		daemonRunName  string // --daemon-run (internal)
-		daemonModeFlag string // --daemon-mode (internal)
-		daemonPort     string // --port (internal)
-		daemonBind     string // --bind-addr (internal)
-		doConfig       bool
-		doList         bool
-		listJSON       bool
-		forceYes       bool
-		showVer        bool
-		reveal         bool
-		privFlag       privacyFlagValue
+		addName         string
+		addHost         string
+		addPort         int
+		addUser         string
+		addAuth         string
+		addPassword     string
+		addKeyPath      string
+		addKeyPass      string
+		addProxy        string
+		addOptionsStr   string
+		addTagsStr      string
+		editName        string
+		delName         string
+		copyOld         string
+		renameOld       string
+		historyProfile  string
+		historyLast     bool
+		sftpStartName   string
+		sftpBind        string
+		sftpAllowRemote bool
+		sftpStopName    string
+		execName        string
+		daemonStart     string // --daemon-start
+		daemonStop      string // --daemon-stop
+		sftpDaemon      string // --sftp-daemon (internal)
+		daemonRunName   string // --daemon-run (internal)
+		daemonModeFlag  string // --daemon-mode (internal)
+		daemonPort      string // --port (internal)
+		daemonBind      string // --bind-addr (internal)
+		doConfig        bool
+		doList          bool
+		listJSON        bool
+		forceYes        bool
+		showVer         bool
+		reveal          bool
+		privFlag        privacyFlagValue
 	)
 
 	flag.StringVar(&addName, "add", "", "Create a new profile")
@@ -92,6 +93,7 @@ func main() {
 	flag.BoolVar(&historyLast, "last", false, "Show only the last connection (use with --history)")
 	flag.StringVar(&sftpStartName, "sftp-start", "", "Start SFTP proxy for a profile (usage: qssh --sftp-start <name>)")
 	flag.StringVar(&sftpBind, "bind", "", "Bind address for SFTP proxy (default: 127.0.0.1)")
+	flag.BoolVar(&sftpAllowRemote, "sftp-allow-remote", false, "Allow SFTP proxy to bind non-loopback addresses (dangerous)")
 	flag.StringVar(&sftpStopName, "sftp-stop", "", "Stop SFTP proxy for a profile (usage: qssh --sftp-stop <name>)")
 	flag.StringVar(&execName, "exec", "", "Run a command on a profile (usage: qssh --exec <profile> <command>)")
 	flag.StringVar(&daemonStart, "daemon-start", "", "Start background daemon for connection reuse")
@@ -147,7 +149,7 @@ func main() {
 	case daemonStop != "":
 		cmd.StopDaemon(daemonStop)
 	case sftpDaemon != "":
-		cmd.SftpDaemon(sftpDaemon, daemonPort, daemonBind)
+		cmd.SftpDaemon(sftpDaemon, daemonPort, daemonBind, sftpAllowRemote)
 	case doConfig:
 		cmd.Config(flag.Args())
 	case addName != "":
@@ -205,15 +207,22 @@ func main() {
 		cmd.Exec(execName, flag.Args())
 	case sftpStartName != "":
 		bindAddr := sftpBind
-		if bindAddr == "" {
-			if cfg := internal.OpenConfig(internal.DefaultConfigPath()); cfg != nil {
+		allowRemote := sftpAllowRemote
+		if cfg := internal.OpenConfig(internal.DefaultConfigPath()); cfg != nil {
+			if bindAddr == "" {
 				bindAddr = cfg.Get("sftp.bind")
+			}
+			// Only widen allowRemote from config when the file is healthy.
+			// A corrupt config must not silently enable remote listening.
+			if !allowRemote && cfg.LoadError() == nil {
+				v := strings.ToLower(strings.TrimSpace(cfg.Get("sftp.allow_non_loopback")))
+				allowRemote = v == "true" || v == "1" || v == "yes"
 			}
 		}
 		if bindAddr == "" {
 			bindAddr = "127.0.0.1"
 		}
-		cmd.SftpStart(sftpStartName, bindAddr, addPort)
+		cmd.SftpStart(sftpStartName, bindAddr, addPort, allowRemote)
 	case sftpStopName != "":
 		cmd.SftpStop(sftpStopName)
 	case doList || listJSON:
@@ -230,10 +239,11 @@ func main() {
 	}
 }
 
-
 // normalizePrivacyArgs rewrites:
-//   --privacy           -> --privacy=status
-//   --privacy on|off... -> --privacy=on|off...
+//
+//	--privacy           -> --privacy=status
+//	--privacy on|off... -> --privacy=on|off...
+//
 // so flag.Var always receives a value (works with space-separated form).
 func normalizePrivacyArgs(args []string) []string {
 	out := make([]string, 0, len(args))

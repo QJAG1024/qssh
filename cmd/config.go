@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"qssh/internal"
 	"qssh/internal/i18n"
@@ -43,6 +44,10 @@ func Config(args []string) {
 
 func listConfig() {
 	c := internal.OpenConfig(internal.DefaultConfigPath())
+	if err := c.LoadError(); err != nil {
+		fmt.Fprintf(os.Stderr, "config corrupt: %v\n", err)
+		os.Exit(1)
+	}
 	all := c.All()
 	if len(all) == 0 {
 		fmt.Println(i18n.T("config.empty"))
@@ -60,6 +65,10 @@ func listConfig() {
 
 func getConfig(key string) {
 	c := internal.OpenConfig(internal.DefaultConfigPath())
+	if err := c.LoadError(); err != nil {
+		fmt.Fprintf(os.Stderr, "config corrupt: %v\n", err)
+		os.Exit(1)
+	}
 	val := c.Get(key)
 	if val == "" {
 		fmt.Println(i18n.T("config.not_set"))
@@ -69,12 +78,42 @@ func getConfig(key string) {
 }
 
 func setConfig(key, value string) {
+	if err := validateConfigValue(key, value); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
 	c := internal.OpenConfig(internal.DefaultConfigPath())
+	if err := c.LoadError(); err != nil {
+		fmt.Fprintf(os.Stderr, "config corrupt: %v\n", err)
+		os.Exit(1)
+	}
 	if err := c.Set(key, value); err != nil {
 		fmt.Fprintf(os.Stderr, i18n.T("config.save_error")+"\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("%s = %s\n", key, value)
+}
+
+// validateConfigValue rejects security-sensitive keys with unknown values
+// so a typo cannot silently weaken policy later at connection time.
+func validateConfigValue(key, value string) error {
+	switch key {
+	case "hostkey.mode":
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "tofu", "strict":
+			return nil
+		default:
+			return fmt.Errorf("invalid hostkey.mode %q (supported: tofu, strict)", value)
+		}
+	case "sftp.allow_non_loopback":
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "true", "false", "1", "0", "yes", "no":
+			return nil
+		default:
+			return fmt.Errorf("invalid sftp.allow_non_loopback %q (supported: true, false)", value)
+		}
+	}
+	return nil
 }
 
 func unsetConfig(key string) {

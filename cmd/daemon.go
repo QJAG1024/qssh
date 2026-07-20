@@ -53,6 +53,7 @@ type daemonReq struct {
 	Data      string   `json:"data,omitempty"`       // base64 stdin chunk
 	BindAddr  string   `json:"bind_addr,omitempty"`  // for mount
 	MountPort int      `json:"mount_port,omitempty"` // for mount (0 = random)
+	Force     bool     `json:"force,omitempty"`      // for stop: terminate even with active cmds/SFTP
 }
 
 type daemonResp struct {
@@ -66,6 +67,10 @@ type daemonResp struct {
 	Port        int    `json:"port,omitempty"`
 	Fingerprint string `json:"fingerprint,omitempty"`
 	Pid         int    `json:"pid,omitempty"`
+	// The daemon's own process identity so the client can record the SFTP
+	// owner accurately (PID files may be stale/recycled).
+	StartTime uint64 `json:"start_time,omitempty"`
+	Exe       string `json:"exe,omitempty"`
 }
 
 // --- Daemon state ---
@@ -111,6 +116,9 @@ type daemon struct {
 	store   *store.Store
 	// profileData is a snapshot used for SetEnv etc. during exec.
 	profileData store.Profile
+	// chainSnapshot is the proxy chain identity at daemon start.
+	// Any hop that changes or disappears invalidates the session.
+	chainSnapshot []store.Profile
 
 	// sshMu guards the live SSH session/client used by exec and SFTP.
 	sshMu     sync.Mutex
@@ -152,6 +160,12 @@ func RunDaemon(profile string, modeStr string) {
 		os.Exit(1)
 	}
 
+	chain, err := buildProxyChain(st, profile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "proxy chain: %s\n", privacy.Error(err))
+		os.Exit(1)
+	}
+
 	sockPath := daemonSocketPath(profile)
 	os.Remove(sockPath)
 	if err := os.MkdirAll(filepath.Dir(sockPath), 0700); err != nil {
@@ -177,11 +191,14 @@ func RunDaemon(profile string, modeStr string) {
 		os.Remove(daemonPidPath(profile))
 	}()
 
-	os.WriteFile(daemonPidPath(profile), []byte(fmt.Sprintf("%d", os.Getpid())), 0600)
+	id := internal.CurrentIdentity()
+	pidPayload := fmt.Sprintf("%d %d %s", id.PID, id.StartTime, id.Exe)
+	os.WriteFile(daemonPidPath(profile), []byte(pidPayload), 0600)
 
 	d := &daemon{
 		profile:       profile,
 		profileData:   p,
+		chainSnapshot: chain,
 		mode:          mode,
 		store:         st,
 		session:       session,
@@ -199,8 +216,7 @@ func RunDaemon(profile string, modeStr string) {
 			sftp := d.sftpRunning
 			d.mu.Unlock()
 			if n == 0 && !sftp {
-				d.stop()
-				os.Exit(0)
+				d.shutdown()
 			}
 		})
 	}
@@ -240,6 +256,8 @@ func (d *daemon) invalidateLocked() {
 
 // redialLocked opens a fresh SSH connection. Caller must hold sshMu.
 // Refuses while SFTP is mounted — that path still holds the old client.
+// Re-opens the store from disk so a deleted profile is detected even when
+// triggered by keepalive auto-reconnect (which does not go through handleConn).
 func (d *daemon) redialLocked() (*ssh.Client, error) {
 	d.mu.Lock()
 	sftp := d.sftpRunning
@@ -250,11 +268,18 @@ func (d *daemon) redialLocked() (*ssh.Client, error) {
 
 	d.invalidateLocked()
 
-	p, ok := d.store.Get(d.profile)
-	if !ok {
-		return nil, fmt.Errorf("profile %q not found", d.profile)
+	// Reload store from disk so external --delete/--edit is visible.
+	st, err := openStore()
+	if err != nil {
+		return nil, fmt.Errorf("reload store: %w", err)
 	}
-	session, err := sshclient.DialProfile(p, d.store.Get, internal.NopProgress)
+	p, ok := st.Get(d.profile)
+	if !ok {
+		return nil, fmt.Errorf("profile %q no longer exists (revoked)", d.profile)
+	}
+	// Use the freshly loaded store for proxy-chain resolution so a
+	// changed jump host is not read from the stale daemon field.
+	session, err := sshclient.DialProfile(p, st.Get, internal.NopProgress)
 	if err != nil {
 		return nil, err
 	}
@@ -306,11 +331,23 @@ func (d *daemon) keepaliveLoop() {
 		case <-d.stopKeepalive:
 			return
 		case <-ticker.C:
+			// Verify profile still exists so a deleted/edited profile
+			// cannot keep a live SSH session indefinitely.
+			if err := d.ensureProfileLive(); err != nil {
+				d.closeSSH()
+				d.shutdown()
+				return
+			}
+
 			d.sshMu.Lock()
 			client := d.sshClient
 			d.sshMu.Unlock()
 			if client == nil {
 				// Opportunistic reconnect when idle and no SFTP.
+				// redialLocked reloads the store from disk; if the profile
+				// was deleted/edited, reconnection fails and the daemon
+				// stays disconnected (next exec/mount will fail via
+				// ensureProfileLive).
 				d.sshMu.Lock()
 				if d.sshClient == nil {
 					_, _ = d.redialLocked()
@@ -318,9 +355,11 @@ func (d *daemon) keepaliveLoop() {
 				d.sshMu.Unlock()
 				continue
 			}
-			// WantReply=true so a dead peer surfaces as an error.
-			ok, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
-			if err != nil || !ok {
+			// WantReply=true so a dead peer surfaces as an I/O error.
+			// ok=false only means the server rejected the request type;
+			// the transport is still alive, so do not disconnect.
+			_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+			if err != nil {
 				d.sshMu.Lock()
 				if d.sshClient == client {
 					d.invalidateLocked()
@@ -329,6 +368,61 @@ func (d *daemon) keepaliveLoop() {
 			}
 		}
 	}
+}
+
+// buildProxyChain returns the profile plus every proxy hop used to reach it.
+// The target profile is chain[0], the final proxy is chain[len(chain)-1].
+// Detects cycles and missing profiles.
+func buildProxyChain(st *store.Store, name string) ([]store.Profile, error) {
+	var chain []store.Profile
+	seen := map[string]bool{}
+	for name != "" {
+		if seen[name] {
+			return nil, fmt.Errorf("proxy cycle detected at %q", name)
+		}
+		seen[name] = true
+		p, ok := st.Get(name)
+		if !ok {
+			return nil, fmt.Errorf("profile %q not found", name)
+		}
+		chain = append(chain, p)
+		name = p.Proxy
+	}
+	return chain, nil
+}
+
+// ensureProfileLive reloads the store and verifies the profile plus every
+// proxy hop still exists with the same connection identity. Returns an error
+// if any profile was deleted or connection-defining fields changed since the
+// daemon started.
+func (d *daemon) ensureProfileLive() error {
+	// Re-open store from disk so external --delete/--edit is visible.
+	st, err := openStore()
+	if err != nil {
+		return fmt.Errorf("reload store: %w", err)
+	}
+	chain, err := buildProxyChain(st, d.profile)
+	if err != nil {
+		return fmt.Errorf("proxy chain broken: %w", err)
+	}
+	if len(chain) != len(d.chainSnapshot) {
+		return fmt.Errorf("profile %q proxy chain length changed; daemon session revoked", d.profile)
+	}
+	for i := range chain {
+		if !profileIdentityEqual(chain[i], d.chainSnapshot[i]) {
+			return fmt.Errorf("profile %q proxy chain identity changed at hop %d; daemon session revoked", d.profile, i)
+		}
+	}
+	return nil
+}
+
+// profileIdentityEqual compares only the connection-defining fields of two
+// profiles (host, port, user, auth, credentials, and proxy link).
+func profileIdentityEqual(a, b store.Profile) bool {
+	return a.Host == b.Host && a.Port == b.Port && a.User == b.User &&
+		a.Auth == b.Auth && a.Proxy == b.Proxy &&
+		a.Password == b.Password && a.KeyPath == b.KeyPath &&
+		a.KeyPassphrase == b.KeyPassphrase
 }
 
 func (d *daemon) handleConn(id string, conn net.Conn) {
@@ -362,6 +456,17 @@ func (d *daemon) handleConn(id string, conn net.Conn) {
 		if err := dec.Decode(&req); err != nil {
 			return // client disconnected
 		}
+		// Every privileged request re-validates profile existence/identity.
+		// stop/ping/unmount are allowed so clients can clean up after revoke.
+		switch req.Type {
+		case "exec", "mount":
+			if err := d.ensureProfileLive(); err != nil {
+				_ = w.writeJSON(daemonResp{Type: "error", Msg: err.Error()})
+				// Auto-shutdown so a deleted profile cannot keep a live session.
+				go d.shutdown()
+				return
+			}
+		}
 		switch req.Type {
 		case "exec":
 			d.handleExec(id, req, w, dec)
@@ -370,7 +475,7 @@ func (d *daemon) handleConn(id string, conn net.Conn) {
 		case "unmount":
 			d.handleUnmount(w)
 		case "stop":
-			d.handleStop(w)
+			d.handleStop(w, req.Force)
 		case "ping":
 			_ = w.writeJSON(daemonResp{Type: "ping"})
 		case "stdin", "stdin_eof":
@@ -503,7 +608,7 @@ func shellJoin(args []string) string {
 	return strings.Join(parts, " ")
 }
 
-// shellQuote wraps s in single quotes, escaping embedded quotes as '\''.
+// shellQuote wraps s in single quotes, escaping embedded quotes as '\”.
 func shellQuote(s string) string {
 	if s == "" {
 		return "''"
@@ -563,6 +668,14 @@ func (d *daemon) handleMount(w *connWriter, req daemonReq) {
 	bindAddr := req.BindAddr
 	if bindAddr == "" {
 		bindAddr = "127.0.0.1"
+	}
+	// Loopback-only by default; daemon mount inherits the same safety
+	// boundary as standalone --sftp-start (no remote-listen override
+	// on the IPC path — clients must start SFTP outside the daemon
+	// with --sftp-allow-remote if they need a non-loopback bind).
+	if err := sftpproxy.ValidateBindAddr(bindAddr, false); err != nil {
+		_ = w.writeJSON(daemonResp{Type: "error", Msg: err.Error()})
+		return
 	}
 
 	portStr := "0"
@@ -638,6 +751,8 @@ func (d *daemon) handleMount(w *connWriter, req daemonReq) {
 		Port:        port,
 		Fingerprint: fingerprint,
 		Pid:         os.Getpid(),
+		StartTime:   internal.CurrentIdentity().StartTime,
+		Exe:         internal.CurrentIdentity().Exe,
 	})
 }
 
@@ -664,7 +779,7 @@ func (d *daemon) handleUnmount(w *connWriter) {
 
 // --- Stop ---
 
-func (d *daemon) handleStop(w *connWriter) {
+func (d *daemon) handleStop(w *connWriter, force bool) {
 	d.mu.Lock()
 	active := make([]string, 0)
 	for _, cs := range d.activeConns {
@@ -673,29 +788,39 @@ func (d *daemon) handleStop(w *connWriter) {
 		}
 	}
 	sftpActive := d.sftpRunning
+	// On force, tear down SFTP listener before exit so clients cannot hang.
+	if force && d.sftpListener != nil {
+		_ = d.sftpListener.Close()
+		d.sftpListener = nil
+		d.sftpRunning = false
+	}
 	d.mu.Unlock()
 
-	if len(active) > 0 {
-		msg := "active commands: "
-		for i, s := range active {
-			if i > 0 {
-				msg += ", "
+	if !force {
+		if len(active) > 0 {
+			msg := "active commands: "
+			for i, s := range active {
+				if i > 0 {
+					msg += ", "
+				}
+				msg += s
 			}
-			msg += s
+			_ = w.writeJSON(daemonResp{Type: "error", Msg: msg + "; use force stop to revoke"})
+			return
 		}
-		_ = w.writeJSON(daemonResp{Type: "stopped", Msg: msg})
-		return
-	}
 
-	if sftpActive && d.mode == daemonPersistent {
-		_ = w.writeJSON(daemonResp{
-			Type: "stopped",
-			Msg:  "SFTP proxy is running (mount active), unmount first",
-		})
-		return
+		if sftpActive && d.mode == daemonPersistent {
+			_ = w.writeJSON(daemonResp{
+				Type: "error",
+				Msg:  "SFTP proxy is running (mount active), unmount first or force stop",
+			})
+			return
+		}
 	}
 
 	_ = w.writeJSON(daemonResp{Type: "stopped"})
+	// Drop SSH session immediately so residual clients cannot reuse it.
+	d.closeSSH()
 	d.shutdown()
 }
 
@@ -713,8 +838,6 @@ func (d *daemon) shutdown() {
 }
 
 // --- Socket helpers ---
-
-
 
 func configDir() string {
 	d, err := os.UserConfigDir()

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -27,6 +28,8 @@ import (
 type sftpEntry struct {
 	Port        int    `json:"port"`
 	PID         int    `json:"pid"`
+	StartTime   uint64 `json:"start_time,omitempty"`
+	Exe         string `json:"exe,omitempty"`
 	URL         string `json:"url"`
 	Status      string `json:"status"` // "starting", "ready", "failed"
 	Message     string `json:"message,omitempty"`
@@ -109,7 +112,12 @@ func configDir() string {
 
 // Start forks a daemon to serve SFTP and exits immediately.
 // If port is 0, picks a random available port.
-func Start(name, bindAddr string, port int) error {
+// bindAddr must be loopback unless allowRemote is true.
+func Start(name, bindAddr string, port int, allowRemote bool) error {
+	if err := ValidateBindAddr(bindAddr, allowRemote); err != nil {
+		return err
+	}
+
 	state := loadState()
 	if _, exists := state[name]; exists {
 		return fmt.Errorf("profile %q is already running", name)
@@ -138,7 +146,13 @@ func Start(name, bindAddr string, port int) error {
 	saveState(state)
 
 	// Fork daemon — re-exec self with hidden flag.
-	cmd := exec.Command(os.Args[0], "--sftp-daemon", name, "--daemon-port", fmt.Sprintf("%d", port), "--bind-addr", bindAddr)
+	// Pass --sftp-allow-remote so CLI-only authorization is not lost
+	// (child previously only re-read sftp.allow_non_loopback from config).
+	args := []string{"--sftp-daemon", name, "--daemon-port", fmt.Sprintf("%d", port), "--bind-addr", bindAddr}
+	if allowRemote {
+		args = append(args, "--sftp-allow-remote")
+	}
+	cmd := exec.Command(os.Args[0], args...)
 	cmd.SysProcAttr = daemonSysProcAttr()
 	cmd.Stderr = nil // detach stderr
 	cmd.Stdout = nil
@@ -181,8 +195,9 @@ func Start(name, bindAddr string, port int) error {
 	// Timeout — clean up orphaned daemon and its state.
 	st := loadState()
 	if entry, ok := st[name]; ok {
-		if err := internal.SafePID(entry.PID); err == nil {
-			_ = internal.GracefulStop(entry.PID)
+		id := internal.ProcessIdentity{PID: entry.PID, StartTime: entry.StartTime, Exe: entry.Exe}
+		if err := internal.MatchIdentity(id); err == nil {
+			_ = internal.GracefulStopIdent(id)
 		}
 		delete(st, name)
 		saveState(st)
@@ -192,10 +207,30 @@ func Start(name, bindAddr string, port int) error {
 
 // --- SftpDaemon (background worker) ---
 
-func SftpDaemon(profileName, portStr, bindAddr string) {
+func SftpDaemon(profileName, portStr, bindAddr string, allowRemote bool) {
 	port := 0
 	fmt.Sscanf(portStr, "%d", &port)
 	if port == 0 {
+		os.Exit(1)
+	}
+
+	// Defense in depth: re-check bind address. allowRemote comes from the
+	// CLI flag the parent passed through (or config). Config can only widen
+	// further if set, never override a false CLI when we want fail-closed —
+	// so OR config true into allowRemote.
+	if cfg := internal.OpenConfig(internal.DefaultConfigPath()); cfg != nil {
+		if err := cfg.LoadError(); err != nil {
+			// Corrupt config: do not widen allowRemote.
+		} else {
+			v := strings.ToLower(strings.TrimSpace(cfg.Get("sftp.allow_non_loopback")))
+			if v == "true" || v == "1" || v == "yes" {
+				allowRemote = true
+			}
+		}
+	}
+	if err := ValidateBindAddr(bindAddr, allowRemote); err != nil {
+		fmt.Fprintf(os.Stderr, "[sftp-daemon] %v\n", err)
+		setFailed(profileName)
 		os.Exit(1)
 	}
 
@@ -256,7 +291,7 @@ func SftpDaemon(profileName, portStr, bindAddr string) {
 	// Mark ready.
 	sftpURL := fmt.Sprintf("sftp://%s:%d", bindAddr, port)
 	fingerprint := ssh.FingerprintSHA256(signer.PublicKey())
-	markReady(profileName, port, sftpURL, os.Getpid(), fingerprint)
+	markReady(profileName, port, sftpURL, internal.CurrentIdentity(), fingerprint)
 
 	// Handle SIGTERM for graceful shutdown.
 	sigCh := make(chan os.Signal, 1)
@@ -280,22 +315,67 @@ func Stop(name string) error {
 		return fmt.Errorf("profile %q is not running", name)
 	}
 
-	// Kill daemon — validate PID before signaling.
-	if err := internal.SafePID(entry.PID); err == nil {
-		_ = internal.GracefulStop(entry.PID)
+	id := internal.ProcessIdentity{
+		PID:       entry.PID,
+		StartTime: entry.StartTime,
+		Exe:       entry.Exe,
+	}
+	// Refuse to signal a bare PID left over from a pre-identity sftp.json.
+	// A stale/recycled PID could belong to any user process; only clean
+	// state and leave any real process alone.
+	if id.StartTime == 0 && id.Exe == "" {
+		delete(state, name)
+		saveState(state)
+		return fmt.Errorf("sftp state for %q lacks start-time/exe identity; refusing to signal bare PID %d", name, id.PID)
+	}
+	// Kill daemon — validate full identity before signaling.
+	// If the process is already gone, treat as success and clean state.
+	// If identity mismatches (PID reuse), refuse to kill and still clear
+	// our state (stale entry) but report the mismatch.
+	var killErr error
+	if entry.PID > 1 {
+		if err := internal.MatchIdentity(id); err != nil {
+			// Process gone or reused — do not signal a wrong process.
+			killErr = err
+		} else if err := internal.GracefulStopIdent(id); err != nil {
+			killErr = err
+		}
 	}
 
 	delete(state, name)
 	saveState(state)
+	// If kill failed because process is gone, that is success for Stop.
+	if killErr != nil {
+		// "not reachable" / starttime mismatch after exit are fine.
+		msg := killErr.Error()
+		if containsAny(msg, "not reachable", "no such process", "process already finished", "The system cannot find") {
+			return nil
+		}
+		// PID reuse: state cleaned, no wrong process killed.
+		if containsAny(msg, "starttime mismatch", "exe mismatch") {
+			return nil
+		}
+		// Real kill failure (e.g. permission, terminate failed) — report.
+		return fmt.Errorf("stop sftp proxy: %w", killErr)
+	}
 	return nil
+}
+
+func containsAny(s string, parts ...string) bool {
+	for _, p := range parts {
+		if strings.Contains(s, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // --- Exported state helpers (used by daemon SFTP path) ---
 
 // SaveState writes an SFTP entry to the state file.
-func SaveState(name string, port int, bindAddr string, pid int, fingerprint string) {
+func SaveState(name string, port int, bindAddr string, id internal.ProcessIdentity, fingerprint string) {
 	url := fmt.Sprintf("sftp://%s:%d", bindAddr, port)
-	markReady(name, port, url, pid, fingerprint)
+	markReady(name, port, url, id, fingerprint)
 }
 
 // RemoveState removes an SFTP entry from the state file.
@@ -307,11 +387,16 @@ func RemoveState(name string) {
 
 // --- Internal helpers ---
 
-func markReady(name string, port int, url string, pid int, fingerprint string) {
+func markReady(name string, port int, url string, id internal.ProcessIdentity, fingerprint string) {
+	if id.PID == 0 {
+		id = internal.CurrentIdentity()
+	}
 	state := loadState()
 	state[name] = sftpEntry{
 		Port:        port,
-		PID:         pid,
+		PID:         id.PID,
+		StartTime:   id.StartTime,
+		Exe:         id.Exe,
 		URL:         url,
 		Status:      "ready",
 		Fingerprint: fingerprint,

@@ -7,11 +7,11 @@ import (
 
 func TestProfileValidate_Valid(t *testing.T) {
 	p := Profile{
-		Name: "test",
-		Host: "192.168.1.1",
-		Port: 22,
-		User: "root",
-		Auth: AuthPassword,
+		Name:     "test",
+		Host:     "192.168.1.1",
+		Port:     22,
+		User:     "root",
+		Auth:     AuthPassword,
 		Password: "secret",
 	}
 	if err := p.Validate(); err != nil {
@@ -68,13 +68,13 @@ func TestSetDefaults_PreservesExplicit(t *testing.T) {
 
 func TestCopy(t *testing.T) {
 	orig := Profile{
-		Name:    "test",
-		Host:    "h",
-		Port:    22,
-		User:    "u",
-		Auth:    AuthPassword,
-		Password: "secret",
-		Tags:    []string{"prod", "web"},
+		Name:      "test",
+		Host:      "h",
+		Port:      22,
+		User:      "u",
+		Auth:      AuthPassword,
+		Password:  "secret",
+		Tags:      []string{"prod", "web"},
 		CreatedAt: time.Now(),
 	}
 	c := orig.Copy()

@@ -46,8 +46,13 @@ func openStore() (*store.Store, error) {
 	backendStr := cfg.Get("store.backend")
 	if backendStr == "" {
 		backendStr = probeBackend()
-		if err := cfg.Set("store.backend", backendStr); err != nil {
-			return nil, fmt.Errorf("persist backend config: %w", err)
+		// Best-effort persist. If config is corrupt, still open the store
+		// using the probed backend — security-sensitive readers (hostkey.mode)
+		// check LoadError() separately and fail closed.
+		if cfg.LoadError() == nil {
+			if err := cfg.Set("store.backend", backendStr); err != nil {
+				return nil, fmt.Errorf("persist backend config: %w", err)
+			}
 		}
 	}
 
