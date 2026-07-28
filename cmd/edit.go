@@ -35,139 +35,9 @@ func Edit(name string, opts AddOpts) {
 		len(opts.Tags) > 0
 
 	if nonInteractive {
-		if opts.Host != "" {
-			p.Host = opts.Host
-		}
-		if opts.Port > 0 {
-			p.Port = opts.Port
-		}
-		if opts.User != "" {
-			p.User = opts.User
-		}
-		if opts.Auth != "" {
-			switch strings.ToLower(opts.Auth) {
-			case "password", "p":
-				p.Auth = store.AuthPassword
-			case "key", "k":
-				p.Auth = store.AuthKey
-			case "agent", "a":
-				p.Auth = store.AuthAgent
-			case "keyboard-interactive", "ki":
-				p.Auth = store.AuthKeyboardInteractive
-			default:
-				fmt.Fprintf(os.Stderr, i18n.T("auth.unsupported")+"\n", opts.Auth)
-				os.Exit(1)
-			}
-		}
-		switch p.Auth {
-		case store.AuthPassword:
-			if opts.Password != "" {
-				p.Password = opts.Password
-			}
-		case store.AuthKey:
-			if opts.KeyPath != "" {
-				p.KeyPath = opts.KeyPath
-			}
-			if opts.KeyPassphrase != "" {
-				p.KeyPassphrase = opts.KeyPassphrase
-			}
-		}
-		if opts.Options != nil {
-			if p.Options == nil {
-				p.Options = make(map[string]string, len(opts.Options))
-			}
-			for k, v := range opts.Options {
-				p.Options[k] = v
-			}
-		}
-		if opts.Proxy != "" {
-			p.Proxy = opts.Proxy
-		}
-		if len(opts.Tags) > 0 {
-			p.Tags = opts.Tags
-		}
-		if opts.Name != "" {
-			p.Name = opts.Name
-		}
+		editNonInteractive(&p, opts)
 	} else {
-		fmt.Printf(i18n.T("field.edit_header")+"\n", name)
-		fmt.Println()
-
-		host := internal.Prompt("Host", p.Host)
-		if host != "" {
-			p.Host = host
-		}
-
-		portStr := internal.Prompt("Port", strconv.Itoa(p.Port))
-		if portStr != "" {
-			if port, err := strconv.Atoi(portStr); err == nil {
-				p.Port = port
-			}
-		}
-
-		user := internal.Prompt("User", p.User)
-		if user != "" {
-			p.User = user
-		}
-
-		authStr := internal.Prompt("Auth method (password/key/agent)", string(p.Auth))
-		if authStr != "" {
-			switch strings.ToLower(authStr) {
-			case "password", "p":
-				p.Auth = store.AuthPassword
-			case "key", "k":
-				p.Auth = store.AuthKey
-			case "agent", "a":
-				p.Auth = store.AuthAgent
-			case "keyboard-interactive", "ki":
-				p.Auth = store.AuthKeyboardInteractive
-			default:
-				fmt.Fprintf(os.Stderr, i18n.T("auth.unsupported")+"\n", authStr)
-				os.Exit(1)
-			}
-		}
-
-		switch p.Auth {
-		case store.AuthPassword:
-			changePass := internal.Confirm("Change password?", false)
-			if changePass {
-				pass, err := internal.ReadPassword("New password")
-				if err != nil {
-					fmt.Fprintf(os.Stderr, i18n.T("password.read_error")+"\n", err)
-					os.Exit(1)
-				}
-				p.Password = pass
-			}
-		case store.AuthKey:
-			keyPath := internal.Prompt("Key path", p.KeyPath)
-			if keyPath != "" {
-				p.KeyPath = keyPath
-			}
-		}
-
-		proxy := internal.Prompt("Proxy profile (or leave empty for none)", p.Proxy)
-		if proxy != "" {
-			p.Proxy = proxy
-		} else if proxy == "" && p.Proxy != "" && !internal.Confirm("Remove proxy?", false) {
-			// keep existing
-		} else {
-			p.Proxy = ""
-		}
-
-		optStr := internal.Prompt("Options (comma-separated KEY=VALUE, or leave empty)", optionString(p.Options))
-		if optStr != "" {
-			parsed := parseOptionString(optStr)
-			if p.Options == nil {
-				p.Options = make(map[string]string, len(parsed))
-			}
-			for k, v := range parsed {
-				p.Options[k] = v
-			}
-		} else if optStr == "" && len(p.Options) > 0 && !internal.Confirm("Remove all options?", false) {
-			// keep existing
-		} else {
-			p.Options = nil
-		}
+		editInteractive(s, &p)
 	}
 
 	p.SetDefaults()
@@ -175,10 +45,7 @@ func Edit(name string, opts AddOpts) {
 		fmt.Fprintf(os.Stderr, i18n.T("profile.save_error")+"\n", err)
 		os.Exit(1)
 	}
-	// Revoke live daemon if connection-defining fields changed so the next
-	// --exec cannot reuse a session authenticated under the old credentials.
-	// If the daemon survives the stop, its keepalive loop detects the
-	// identity change within 30s and auto-terminates.
+	// Revoke live daemon if connection-defining fields changed.
 	if connectionIdentityChanged(orig, p) {
 		if err := stopDaemon(name); err != nil && daemonRunning(name) {
 			fmt.Fprintf(os.Stderr, "warning: could not stop daemon for %q (it will auto-terminate within 30s): %v\n", name, err)
@@ -188,6 +55,197 @@ func Edit(name string, opts AddOpts) {
 		_ = sftpproxy.Stop(name)
 	}
 	fmt.Printf(i18n.T("profile.updated")+"\n", name)
+}
+
+func editNonInteractive(p *store.Profile, opts AddOpts) {
+	if opts.Host != "" {
+		p.Host = opts.Host
+	}
+	if opts.Port > 0 {
+		p.Port = opts.Port
+	}
+	if opts.User != "" {
+		p.User = opts.User
+	}
+	if opts.Auth != "" {
+		switch strings.ToLower(opts.Auth) {
+		case "password", "p":
+			p.Auth = store.AuthPassword
+		case "key", "k":
+			p.Auth = store.AuthKey
+		case "agent", "a":
+			p.Auth = store.AuthAgent
+		case "keyboard-interactive", "ki":
+			p.Auth = store.AuthKeyboardInteractive
+		default:
+			fmt.Fprintf(os.Stderr, i18n.T("auth.unsupported")+"\n", opts.Auth)
+			os.Exit(1)
+		}
+	}
+	switch p.Auth {
+	case store.AuthPassword:
+		if opts.Password != "" {
+			p.Password = opts.Password
+		}
+	case store.AuthKey:
+		if opts.KeyPath != "" {
+			p.KeyPath = opts.KeyPath
+		}
+		if opts.KeyPassphrase != "" {
+			p.KeyPassphrase = opts.KeyPassphrase
+		}
+	}
+	if opts.Options != nil {
+		if p.Options == nil {
+			p.Options = make(map[string]string, len(opts.Options))
+		}
+		for k, v := range opts.Options {
+			p.Options[k] = v
+		}
+	}
+	if opts.Proxy != "" {
+		p.Proxy = opts.Proxy
+	}
+	if len(opts.Tags) > 0 {
+		p.Tags = opts.Tags
+	}
+	if opts.Name != "" {
+		p.Name = opts.Name
+	}
+}
+
+func editInteractive(s *store.Store, p *store.Profile) {
+	menuItems := []string{
+		"Host/Port/User",
+		"Auth method & credentials",
+		"ProxyJump",
+		"Options",
+		"Tags",
+		"Save & exit",
+		"Discard",
+	}
+
+	for {
+		fmt.Println()
+		fmt.Println(strings.Repeat("─", 50))
+		fmt.Printf("  Editing: %s  (%s@%s:%d)\n", p.Name, p.User, p.Host, p.Port)
+		fmt.Println(strings.Repeat("─", 50))
+		for i, item := range menuItems {
+			fmt.Printf("  %d) %s\n", i+1, item)
+		}
+		fmt.Println()
+
+		choice := internal.Prompt("Choose", "")
+		if choice == "" {
+			choice = "6" // default: Save & exit
+		}
+
+		n, err := strconv.Atoi(choice)
+		if err != nil || n < 1 || n > len(menuItems) {
+			fmt.Println("Invalid choice")
+			continue
+		}
+
+		switch n {
+		case 1: // Host/Port/User
+			host := internal.Prompt("Host", p.Host)
+			if host != "" {
+				p.Host = host
+			}
+			portStr := internal.Prompt("Port", strconv.Itoa(p.Port))
+			if port, err := strconv.Atoi(portStr); err == nil && port > 0 {
+				p.Port = port
+			}
+			user := internal.Prompt("User", p.User)
+			if user != "" {
+				p.User = user
+			}
+		case 2: // Auth
+			editAuth(p)
+		case 3: // Proxy
+			proxy := internal.Prompt("ProxyJump profile (empty to remove)", p.Proxy)
+			if proxy == "" && p.Proxy != "" {
+				if internal.Confirm("Remove proxy?", false) {
+					p.Proxy = ""
+				}
+			} else if proxy != "" {
+				p.Proxy = proxy
+			}
+		case 4: // Options
+			optStr := internal.Prompt("Options (comma-separated KEY=VALUE)", optionString(p.Options))
+			if optStr == "" && len(p.Options) > 0 {
+				if internal.Confirm("Remove all options?", false) {
+					p.Options = nil
+				}
+			} else if optStr != "" {
+				parsed := parseOptionString(optStr)
+				if p.Options == nil {
+					p.Options = make(map[string]string, len(parsed))
+				}
+				for k, v := range parsed {
+					p.Options[k] = v
+				}
+			}
+		case 5: // Tags
+			tagsStr := internal.Prompt("Tags (comma-separated)", strings.Join(p.Tags, ", "))
+			if tagsStr != "" {
+				p.Tags = parseTags(tagsStr)
+			}
+		case 6: // Save & exit
+			printSummary(*p)
+			if internal.Confirm("Save changes?", true) {
+				return
+			}
+		case 7: // Discard
+			if internal.Confirm("Discard all changes?", false) {
+				fmt.Println(i18n.T("profile.cancelled"))
+				os.Exit(0)
+			}
+		}
+	}
+}
+
+func editAuth(p *store.Profile) {
+	fmt.Println()
+	currentAuth := string(p.Auth)
+	authMethods := validAuthMethods
+	authStr := internal.SelectPrompt("Auth method:", authMethods, currentAuth)
+
+	switch strings.ToLower(authStr) {
+	case "password", "p":
+		p.Auth = store.AuthPassword
+		if internal.Confirm("Change password?", false) {
+			pass, err := internal.ReadPasswordWithConfirm("New password")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, i18n.T("password.read_error")+"\n", err)
+				os.Exit(1)
+			}
+			p.Password = pass
+		}
+	case "key", "k":
+		p.Auth = store.AuthKey
+		keyPath := internal.Prompt("Key path", p.KeyPath)
+		if keyPath != "" {
+			p.KeyPath = internal.ExpandPath(keyPath)
+		}
+		if internal.Confirm("Key has passphrase?", p.KeyPassphrase != "") {
+			pass, err := internal.ReadPassword("Key passphrase")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, i18n.T("password.read_error")+"\n", err)
+				os.Exit(1)
+			}
+			p.KeyPassphrase = pass
+		} else {
+			p.KeyPassphrase = ""
+		}
+	case "agent", "a":
+		p.Auth = store.AuthAgent
+		p.Password = ""
+		p.KeyPath = ""
+		p.KeyPassphrase = ""
+	case "keyboard-interactive", "ki":
+		p.Auth = store.AuthKeyboardInteractive
+	}
 }
 
 // connectionIdentityChanged reports whether host/port/user/auth/key/proxy
@@ -206,7 +264,7 @@ func connectionIdentityChanged(a, b store.Profile) bool {
 	return false
 }
 
-// optionString converts a map to a comma-separated KEY=VALUE string for prompting.
+// optionString converts a map to a comma-separated KEY=VALUE string.
 func optionString(m map[string]string) string {
 	if len(m) == 0 {
 		return ""

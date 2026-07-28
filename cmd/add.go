@@ -27,7 +27,7 @@ type AddOpts struct {
 func Add(opts AddOpts) {
 	s, err := openStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, i18n.T("store.open_error", err), err)
+		fmt.Fprintf(os.Stderr, i18n.T("store.open_error")+"\n", err)
 		os.Exit(1)
 	}
 
@@ -45,73 +45,59 @@ func Add(opts AddOpts) {
 	p := store.Profile{Name: name}
 
 	if nonInteractive {
-		if opts.Host == "" {
-			fmt.Fprintln(os.Stderr, i18n.T("field.required_host"))
-			os.Exit(1)
-		}
-		p.Host = opts.Host
+		addNonInteractive(&p, opts)
 	} else {
-		p.Host = internal.Prompt("Host", "")
-		if p.Host == "" {
-			fmt.Fprintln(os.Stderr, i18n.T("field.required_host"))
-			os.Exit(1)
-		}
+		addInteractive(s, &p, opts)
 	}
+
+	p.SetDefaults()
+	if err := s.Add(p); err != nil {
+		fmt.Fprintf(os.Stderr, i18n.T("profile.save_error")+"\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf(i18n.T("profile.created")+"\n", name, name)
+}
+
+func addNonInteractive(p *store.Profile, opts AddOpts) {
+	if opts.Host == "" {
+		fmt.Fprintln(os.Stderr, i18n.T("field.required_host"))
+		os.Exit(1)
+	}
+	p.Host = opts.Host
 
 	if opts.Port > 0 {
 		p.Port = opts.Port
-	} else if nonInteractive {
-		p.Port = 22
 	} else {
-		portStr := internal.Prompt("Port", "22")
-		p.Port, _ = strconv.Atoi(portStr)
+		p.Port = 22
 	}
 
-	if nonInteractive {
-		if opts.User == "" {
-			fmt.Fprintln(os.Stderr, i18n.T("field.required_user"))
-			os.Exit(1)
-		}
-		p.User = opts.User
-	} else {
-		p.User = internal.Prompt("User", "")
-		if p.User == "" {
-			fmt.Fprintln(os.Stderr, i18n.T("field.required_user"))
-			os.Exit(1)
-		}
+	if opts.User == "" {
+		fmt.Fprintln(os.Stderr, i18n.T("field.required_user"))
+		os.Exit(1)
 	}
+	p.User = opts.User
 
 	authStr := opts.Auth
-	if authStr == "" && nonInteractive {
+	if authStr == "" {
 		authStr = "password"
-	} else if authStr == "" {
-		authStr = internal.Prompt("Auth method (password/key/agent)", "password")
 	}
 	switch strings.ToLower(authStr) {
 	case "password", "p":
 		p.Auth = store.AuthPassword
 		if opts.Password != "" {
 			p.Password = opts.Password
-		} else if nonInteractive {
+		} else {
 			fmt.Fprintln(os.Stderr, i18n.T("add.required_password"))
 			os.Exit(1)
-		} else {
-			pass, err := internal.ReadPassword("Password")
-			if err != nil {
-				fmt.Fprintf(os.Stderr, i18n.T("password.read_error")+"\n", err)
-				os.Exit(1)
-			}
-			p.Password = pass
 		}
 	case "key", "k":
 		p.Auth = store.AuthKey
 		if opts.KeyPath != "" {
 			p.KeyPath = opts.KeyPath
-		} else if nonInteractive {
+		} else {
 			fmt.Fprintln(os.Stderr, i18n.T("add.required_keypath"))
 			os.Exit(1)
-		} else {
-			p.KeyPath = internal.Prompt("Key path", "~/.ssh/id_ed25519")
 		}
 		if opts.KeyPassphrase != "" {
 			p.KeyPassphrase = opts.KeyPassphrase
@@ -126,12 +112,7 @@ func Add(opts AddOpts) {
 	}
 
 	if opts.Options != nil {
-		if p.Options == nil {
-			p.Options = make(map[string]string, len(opts.Options))
-		}
-		for k, v := range opts.Options {
-			p.Options[k] = v
-		}
+		p.Options = opts.Options
 	}
 	if opts.Proxy != "" {
 		p.Proxy = opts.Proxy
@@ -139,11 +120,152 @@ func Add(opts AddOpts) {
 	if len(opts.Tags) > 0 {
 		p.Tags = opts.Tags
 	}
-	p.SetDefaults()
-	if err := s.Add(p); err != nil {
-		fmt.Fprintf(os.Stderr, i18n.T("profile.save_error")+"\n", err)
+}
+
+func addInteractive(s *store.Store, p *store.Profile, opts AddOpts) {
+	fmt.Println(strings.Repeat("─", 50))
+	fmt.Printf("  Creating profile: %s\n", p.Name)
+	fmt.Println(strings.Repeat("─", 50))
+	fmt.Println()
+
+	// Host
+	p.Host = internal.Prompt("Host", "")
+	if p.Host == "" {
+		fmt.Fprintln(os.Stderr, i18n.T("field.required_host"))
 		os.Exit(1)
 	}
 
-	fmt.Printf(i18n.T("profile.created")+"\n", name, name)
+	// Port
+	portStr := internal.Prompt("Port", "22")
+	p.Port, _ = strconv.Atoi(portStr)
+
+	// User
+	p.User = internal.Prompt("User", os.Getenv("USER"))
+	if p.User == "" {
+		fmt.Fprintln(os.Stderr, i18n.T("field.required_user"))
+		os.Exit(1)
+	}
+
+	// Auth method — numbered selection
+	authMethods := validAuthMethods
+	authStr := internal.SelectPrompt("Auth method:", authMethods, "password")
+	switch strings.ToLower(authStr) {
+	case "password", "p":
+		p.Auth = store.AuthPassword
+		pass, err := internal.ReadPasswordWithConfirm("Password")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, i18n.T("password.read_error")+"\n", err)
+			os.Exit(1)
+		}
+		p.Password = pass
+	case "key", "k":
+		p.Auth = store.AuthKey
+		p.KeyPath = internal.Prompt("Key path", "~/.ssh/id_ed25519")
+		p.KeyPath = internal.ExpandPath(p.KeyPath)
+		// Verify key file exists
+		if _, err := os.Stat(p.KeyPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: key file %q not found: %v\n", p.KeyPath, err)
+		}
+		if internal.Confirm("Key has passphrase?", false) {
+			pass, err := internal.ReadPassword("Key passphrase")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, i18n.T("password.read_error")+"\n", err)
+				os.Exit(1)
+			}
+			p.KeyPassphrase = pass
+		}
+	case "agent", "a":
+		p.Auth = store.AuthAgent
+	case "keyboard-interactive", "ki":
+		p.Auth = store.AuthKeyboardInteractive
+	}
+
+	// Proxy (jump host)
+	proxy := internal.Prompt("ProxyJump profile (optional)", "")
+	if proxy != "" {
+		// Validate proxy profile exists
+		if _, exists := s.Get(proxy); !exists {
+			fmt.Fprintf(os.Stderr, "Warning: proxy profile %q not found, will be created later\n", proxy)
+		}
+		// Cycle detection: proxy cannot point to self
+		if proxy == p.Name {
+			fmt.Fprintln(os.Stderr, "Error: proxy cannot point to the same profile")
+			os.Exit(1)
+		}
+		p.Proxy = proxy
+	}
+
+	// Options
+	optStr := internal.Prompt("Options (comma-separated KEY=VALUE, optional)", "")
+	if optStr != "" {
+		p.Options = parseOptionString(optStr)
+	}
+
+	// Tags
+	tagsStr := internal.Prompt("Tags (comma-separated, optional)", "")
+	if tagsStr != "" {
+		p.Tags = parseTags(tagsStr)
+	}
+
+	// Preview summary
+	printSummary(*p)
+
+	if !internal.Confirm("Save profile?", true) {
+		fmt.Println(i18n.T("profile.cancelled"))
+		os.Exit(0)
+	}
+}
+
+// parseTags splits a comma-separated string into trimmed tags.
+func parseTags(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var tags []string
+	for _, t := range strings.Split(s, ",") {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			tags = append(tags, t)
+		}
+	}
+	return tags
+}
+
+// printSummary prints a profile summary before save, omitting secrets.
+func printSummary(p store.Profile) {
+	fmt.Println()
+	fmt.Println(strings.Repeat("─", 40))
+	fmt.Println("  Preview")
+	fmt.Println(strings.Repeat("─", 40))
+	fmt.Printf("  Name:      %s\n", p.Name)
+	fmt.Printf("  Host:      %s:%d\n", p.Host, p.Port)
+	fmt.Printf("  User:      %s\n", p.User)
+	fmt.Printf("  Auth:      %s\n", p.Auth)
+	switch p.Auth {
+	case store.AuthPassword:
+		if p.Password != "" {
+			fmt.Println("  Password:  (set)")
+		}
+	case store.AuthKey:
+		fmt.Printf("  Key path:  %s\n", p.KeyPath)
+		if p.KeyPassphrase != "" {
+			fmt.Println("  Passphrase: (set)")
+		}
+	case store.AuthAgent:
+		fmt.Println("  Agent:     (SSH agent)")
+	}
+	if p.Proxy != "" {
+		fmt.Printf("  Proxy:     %s\n", p.Proxy)
+	}
+	if len(p.Options) > 0 {
+		fmt.Println("  Options:")
+		for k, v := range p.Options {
+			fmt.Printf("    %s = %s\n", k, v)
+		}
+	}
+	if len(p.Tags) > 0 {
+		fmt.Printf("  Tags:      %s\n", strings.Join(p.Tags, ", "))
+	}
+	fmt.Println(strings.Repeat("─", 40))
+	fmt.Println()
 }

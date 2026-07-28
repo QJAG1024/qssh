@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"golang.org/x/term"
@@ -190,4 +191,69 @@ func RenderProfileHeader(name string, user string, host string, port int) {
 // RenderSummary prints a brief connection end summary.
 func RenderSummary(name string, duration string) {
 	fmt.Fprintf(os.Stderr, i18n.T("session.closed")+"\n", duration)
+}
+
+// --- Interactive prompt helpers ---
+
+// SelectPrompt displays a numbered list and returns the chosen value.
+// If the user presses Enter without a number, returns the default (the first
+// item when defaultVal is empty, or the matching item otherwise).
+func SelectPrompt(label string, items []string, defaultVal string) string {
+	fmt.Printf("%s\n", label)
+	for i, item := range items {
+		fmt.Printf("  %d) %s\n", i+1, item)
+	}
+	if defaultVal != "" {
+		fmt.Printf("Select [%s]: ", defaultVal)
+	} else {
+		fmt.Printf("Select [1]: ")
+	}
+	line := readLine()
+	if line == "" {
+		if defaultVal != "" {
+			return defaultVal
+		}
+		return items[0]
+	}
+	// Try numeric
+	if n, err := strconv.Atoi(line); err == nil && n >= 1 && n <= len(items) {
+		return items[n-1]
+	}
+	// Try substring match
+	lower := strings.ToLower(line)
+	for _, item := range items {
+		if strings.ToLower(item) == lower {
+			return item
+		}
+	}
+	// Fallback to first item
+	return items[0]
+}
+
+// ReadPasswordWithConfirm reads a password twice and returns it only if both
+// entries match.
+func ReadPasswordWithConfirm(label string) (string, error) {
+	pass, err := ReadPassword(label)
+	if err != nil {
+		return "", err
+	}
+	pass2, err := ReadPassword(label + " (confirm)")
+	if err != nil {
+		return "", err
+	}
+	if pass != pass2 {
+		return "", fmt.Errorf("passwords do not match")
+	}
+	return pass, nil
+}
+
+// ExpandPath expands ~ to the home directory.
+func ExpandPath(path string) string {
+	if len(path) > 1 && path[0] == '~' {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return home + path[1:]
+		}
+	}
+	return path
 }
