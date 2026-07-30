@@ -267,6 +267,7 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 // resolveTermEnv picks the PTY $TERM string for RequestPty.
 // Default is passthrough of the local TERM (OpenSSH-like).
 // term.mode=compat forces a widely-available entry for broken remote terminfo.
+// Terminal types unlikely to exist on remote hosts are mapped to xterm-256color.
 func resolveTermEnv() string {
 	mode := ""
 	if cfg := internal.OpenConfig(internal.DefaultConfigPath()); cfg != nil {
@@ -285,7 +286,27 @@ func resolveTermEnv() string {
 	if local == "" {
 		return "xterm-256color"
 	}
+	// Passthrough with fallback: terminal types that are unlikely to have
+	// a remote terminfo entry (ghostty, kitty, wezterm, etc.) → xterm-256color.
+	if isUnlikelyRemoteTerm(local) {
+		return "xterm-256color"
+	}
 	return local
+}
+
+// isUnlikelyRemoteTerm returns true for terminal types that are typically
+// only installed on the local machine and not on remote hosts.
+func isUnlikelyRemoteTerm(term string) bool {
+	switch strings.ToLower(term) {
+	case "xterm-ghostty", "xterm-kitty", "kitty",
+		"wezterm", "xterm-wezterm",
+		"alacritty",
+		"contour",
+		"foot",
+		"rio":
+		return true
+	}
+	return false
 }
 
 // terminalSize returns a sane PTY size. Never returns 0x0 (breaks TUIs).
