@@ -120,13 +120,9 @@ func configInteractive() {
 
 func setConfigInteractive(c *internal.Config, known map[string]configKeyMeta) {
 	fmt.Println()
-	fmt.Println("Available keys:")
 	for _, k := range sortedKeys(known) {
 		meta := known[k]
 		fmt.Printf("  %s", k)
-		if meta.desc != "" {
-			fmt.Printf("  (%s)", meta.desc)
-		}
 		if len(meta.options) > 0 {
 			fmt.Printf("  [%s]", strings.Join(meta.options, "|"))
 		}

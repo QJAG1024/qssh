@@ -140,7 +140,12 @@ func addInteractive(s *store.Store, p *store.Profile, opts AddOpts) {
 	p.Port, _ = strconv.Atoi(portStr)
 
 	// User
-	p.User = internal.Prompt("User", os.Getenv("USER"))
+	// User — default to current OS user
+	defaultUser := os.Getenv("USER")
+	if defaultUser == "" {
+		defaultUser = os.Getenv("USERNAME")
+	}
+	p.User = internal.Prompt("User", defaultUser)
 	if p.User == "" {
 		fmt.Fprintln(os.Stderr, i18n.T("field.required_user"))
 		os.Exit(1)
