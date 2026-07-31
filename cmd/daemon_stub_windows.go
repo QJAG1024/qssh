@@ -59,7 +59,7 @@ func execViaDaemon(profile string, args []string) (int, error) {
 	return -1, fmt.Errorf("not supported on Windows")
 }
 
-func sftpViaDaemon(profile, bindAddr string, port int) (int, string, internal.ProcessIdentity, error) {
+func sftpViaDaemon(profile, bindAddr string, port int, allowRemote bool) (int, string, internal.ProcessIdentity, error) {
 	return 0, "", internal.ProcessIdentity{}, fmt.Errorf("not supported on Windows")
 }
 
