@@ -1,6 +1,7 @@
 # 命令参考
 
 <a id="profile-management"></a>
+
 ## 凭据管理
 
 ### `qssh --add`
@@ -18,7 +19,7 @@ qssh --add myserver --host example.com --user deploy --auth agent
 ```
 
 | 选项 | 说明 |
-|------|------|
+| ------ | ------ |
 | `--host <host>` | SSH 主机名或 IP 地址 |
 | `--port <port>` | SSH 端口（默认: `22`） |
 | `--user <user>` | SSH 用户名 |
@@ -70,7 +71,7 @@ qssh --list --json        # 机器可读（密码已脱敏，隐私模式下隐�
 ### 凭据选项 (`--set-option`)
 
 | 键 | 值 | 说明 |
-|----|-----|------|
+| ---- | ----- | ------ |
 | `ConnectTimeout` | 时长（如 `30s`） | TCP+SSH 握手超时。默认: `10s` |
 | `SetEnv` | `KEY=VALUE,KEY2=VALUE2` | 远程会话环境变量 |
 
@@ -84,7 +85,7 @@ qssh --add srv --host 10.0.0.1 --user root --auth password --password x \
 ## 认证方式
 
 | 方式 | CLI 选项 | 所需 |
-|------|----------|------|
+| ------ | ---------- | ------ |
 | `password` | `--auth password` | `--password` |
 | `key` | `--auth key` | `--key-path`；可选 `--key-passphrase` |
 | `agent` | `--auth agent` | `SSH_AUTH_SOCK` |
@@ -103,6 +104,7 @@ qssh <profile>
 ---
 
 <a id="remote-command-execution"></a>
+
 ## 远程命令执行
 
 ```bash
@@ -136,6 +138,7 @@ tar czf - . | qssh --exec srv 'tar xzf - -C /tmp'
 ---
 
 <a id="sftp-proxy"></a>
+
 ## SFTP 代理
 
 本地 TCP 服务器，代理 SFTP 到远程主机。任何 SFTP 客户端均可连接。
@@ -173,6 +176,7 @@ Daemon 每 30 秒发送 SSH keepalive 探测，连接断开时自动重连（SFT
 ---
 
 <a id="jump-hosts"></a>
+
 ## 跳板机（代理链）
 
 凭据可以指定另一个凭据作为跳板机。支持多级链。
@@ -203,9 +207,29 @@ qssh --last                  # 最近一条
 
 历史记录受 `history.max_size` 限制（默认 5 MB）。详见 [config.md](config.md)。
 
+### 命令记录
+
+`--exec` 命令有多少写入历史，由三级模式控制。安全的默认值（`masked`）只保存命令名（`docker compose up -d` → `docker`），因此作为参数传入的密钥永远不会落到磁盘。
+
+| 模式 | 行为 |
+| ------ | ------ |
+| `full` | 保存完整命令行 |
+| `masked`（默认） | 只保存第一个 token（命令名） |
+| `off` | 完全不保存命令 |
+
+```bash
+# 全局默认
+qssh --config set history.record_commands full
+
+# 按凭据覆盖（优先于全局）
+qssh --add myserver --host 1.2.3.4 --set-option history.record_commands=off
+qssh --edit myserver --set-option history.record_commands=masked
+```
+
 ---
 
 <a id="privacy"></a>
+
 ## 隐私
 
 主机/IP 地址**默认**从 UI 输出中脱敏。

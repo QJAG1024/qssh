@@ -112,7 +112,12 @@ func addNonInteractive(p *store.Profile, opts AddOpts) {
 	}
 
 	if opts.Options != nil {
-		p.Options = opts.Options
+		var err error
+		p.Options, err = internal.ApplyOptionMap(p.Options, opts.Options)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "options: %v\n", err)
+			os.Exit(1)
+		}
 	}
 	if opts.Proxy != "" {
 		p.Proxy = opts.Proxy
@@ -203,7 +208,13 @@ func addInteractive(s *store.Store, p *store.Profile, opts AddOpts) {
 	// Options
 	optStr := internal.Prompt("Options (comma-separated KEY=VALUE, optional)", "")
 	if optStr != "" {
-		p.Options = parseOptionString(optStr)
+		parsed := parseOptionString(optStr)
+		var err error
+		p.Options, err = internal.ApplyOptionMap(p.Options, parsed)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "options: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// Tags

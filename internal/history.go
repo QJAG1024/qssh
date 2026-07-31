@@ -16,7 +16,80 @@ const (
 
 	// configKeyHistoryMaxSize is the config key for overriding the cap.
 	configKeyHistoryMaxSize = "history.max_size"
+
+	// historyRecordKey is the global default for how much of a remote command
+	// is persisted. It is also the per-profile option key (profile Options[
+	// "history.record_commands"] overrides the global value) — same-name
+	// keys with profile-over-global precedence, matching the unified
+	// per-profile option model.
+	historyRecordKey = "history.record_commands"
 )
+
+// History record modes.
+const (
+	RecordFull   = "full"   // persist the entire command line
+	RecordMasked = "masked" // persist only the command name (first token)
+	RecordOff    = "off"    // persist no command at all
+)
+
+// HistoryRecordMode resolves the effective command-recording mode for a
+// profile via the unified per-profile option resolution: profile
+// Options["history.record_commands"] > global history.record_commands > masked.
+//
+// An empty profile value ("--set-option history.record_commands=") clears the
+// override and falls through to the global default (EffectiveOption handles
+// that). Any other invalid value fails closed to masked so a typo cannot
+// silently persist full command lines (an invalid profile value does not fall
+// through to a global "full").
+func HistoryRecordMode(profileOpts map[string]string) string {
+	if profileOpts != nil {
+		if v, ok := profileOpts[historyRecordKey]; ok {
+			if strings.TrimSpace(v) == "" {
+				return globalRecordMode() // empty value clears the override
+			}
+			if m := normalizeRecordMode(v); m != "" {
+				return m
+			}
+			return RecordMasked // invalid profile value: fail closed
+		}
+	}
+	return globalRecordMode()
+}
+
+// globalRecordMode resolves history.record_commands from config,
+// falling back to masked when unset or invalid.
+func globalRecordMode() string {
+	if v := EffectiveOption(nil, historyRecordKey); v != "" {
+		if m := normalizeRecordMode(v); m != "" {
+			return m
+		}
+	}
+	return RecordMasked
+}
+
+// normalizeRecordMode validates a raw mode string.
+func normalizeRecordMode(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case RecordFull:
+		return RecordFull
+	case RecordMasked:
+		return RecordMasked
+	case RecordOff:
+		return RecordOff
+	}
+	return ""
+}
+
+// MaskCommand reduces a command line to its command name (first token),
+// preserving quoted first tokens and paths: "echo hi" -> "echo",
+// "docker compose up -d" -> "docker", "vim .env" -> "vim".
+func MaskCommand(cmd string) string {
+	fields := strings.Fields(cmd)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
+}
 
 // HistoryEntry represents a single connection record.
 type HistoryEntry struct {

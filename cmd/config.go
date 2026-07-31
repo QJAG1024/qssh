@@ -216,8 +216,20 @@ func configKnownKeys() map[string]configKeyMeta {
 			desc:    "Allow SFTP proxy to bind non-loopback",
 			options: []string{"false", "true"},
 		},
+		"sftp.bind": {
+			desc:    "Default SFTP proxy bind address",
+			defaultVal: "127.0.0.1",
+		},
 		"term.mode": {
 			desc: "PTY $TERM passthrough (compat=force xterm)",
+		},
+		"history.record_commands": {
+			desc:    "Default command recording: full|masked|off",
+			options: []string{"full", "masked", "off"},
+		},
+		"history.max_size": {
+			desc:       "History file size cap",
+			defaultVal: "5M",
 		},
 	}
 }
@@ -309,6 +321,13 @@ func validateConfigValue(key, value string) error {
 			return nil
 		default:
 			return fmt.Errorf("invalid sftp.allow_non_loopback %q (supported: true, false)", value)
+		}
+	case "history.record_commands":
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "full", "masked", "off":
+			return nil
+		default:
+			return fmt.Errorf("invalid history.record_commands %q (supported: full, masked, off)", value)
 		}
 	}
 	return nil

@@ -10,6 +10,25 @@ import (
 	"qssh/internal/privacy"
 )
 
+// historyCommand resolves the profile's history recording mode and returns the
+// command string to persist: full command line, masked to command name, or empty.
+func historyCommand(profileName, command string) string {
+	mode := internal.RecordMasked
+	if st, err := openStore(); err == nil {
+		if p, ok := st.Get(profileName); ok {
+			mode = internal.HistoryRecordMode(p.Options)
+		}
+	}
+	switch mode {
+	case internal.RecordFull:
+		return command
+	case internal.RecordOff:
+		return ""
+	default:
+		return internal.MaskCommand(command)
+	}
+}
+
 // Exec connects to a profile, runs a command, and exits with the remote exit code.
 // If a daemon is already running, reuses its connection.
 // Otherwise, auto-starts a managed daemon (idle timeout 5 min, auto-exit).
@@ -39,7 +58,7 @@ func Exec(name string, args []string) {
 	internal.AppendHistory(&internal.HistoryEntry{
 		Profile:  name,
 		Duration: duration.Truncate(time.Second).String(),
-		Command:  command,
+		Command:  historyCommand(name, command),
 		ExitCode: code,
 	})
 

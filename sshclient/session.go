@@ -70,7 +70,7 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 	})
 
 	// Host key callback
-	hkCallback, err := HostKeyCallback(p.Host, addr)
+	hkCallback, err := HostKeyCallback(p.Options, addr)
 	if err != nil {
 		return nil, fmt.Errorf("host key callback: %w", err)
 	}
@@ -162,9 +162,10 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 
 	// TERM: passthrough local value by default so TUI apps (docker compose, etc.)
 	// see the same capabilities as a native OpenSSH session. Escape hatch:
-	//   qssh --config set term.mode compat
+	//   qssh --config set term.mode compat        (global)
+	//   qssh --edit <p> --set-option term.mode=compat   (per-profile)
 	// forces a minimal terminfo entry for hosts without ncurses-term.
-	termEnv := resolveTermEnv()
+	termEnv := resolveTermEnv(s.profile.Options)
 	modes := defaultPTYModes()
 
 	progress(internal.StepResult{
@@ -267,12 +268,10 @@ func (s *Session) InteractiveShell(stdin io.Reader, stdout, stderr io.Writer, pr
 // resolveTermEnv picks the PTY $TERM string for RequestPty.
 // Default is passthrough of the local TERM (OpenSSH-like).
 // term.mode=compat forces a widely-available entry for broken remote terminfo.
+// Per-profile override: profile Options["term.mode"] wins over the global key.
 // Terminal types unlikely to exist on remote hosts are mapped to xterm-256color.
-func resolveTermEnv() string {
-	mode := ""
-	if cfg := internal.OpenConfig(internal.DefaultConfigPath()); cfg != nil {
-		mode = strings.ToLower(strings.TrimSpace(cfg.Get("term.mode")))
-	}
+func resolveTermEnv(profileOpts map[string]string) string {
+	mode := strings.ToLower(strings.TrimSpace(internal.EffectiveOption(profileOpts, "term.mode")))
 	local := strings.TrimSpace(os.Getenv("TERM"))
 	if mode == "compat" {
 		// Minimal set present in ncurses-base on almost every distro.
@@ -386,7 +385,7 @@ func DialViaProxy(p store.Profile, proxyClient *ssh.Client, targetAddr string, p
 	})
 
 	// Host key callback
-	hkCallback, err := HostKeyCallback(p.Host, targetAddr)
+	hkCallback, err := HostKeyCallback(p.Options, targetAddr)
 	if err != nil {
 		return nil, fmt.Errorf("host key callback: %w", err)
 	}
@@ -531,7 +530,7 @@ func buildProxyChain(p store.Profile, lookup ProfileLookup) ([]store.Profile, er
 
 // newClientConn performs an SSH handshake over an existing net.Conn.
 func newClientConn(c net.Conn, addr string, p store.Profile) (ssh.Conn, <-chan ssh.NewChannel, <-chan *ssh.Request, error) {
-	hkCallback, err := HostKeyCallback(p.Host, addr)
+	hkCallback, err := HostKeyCallback(p.Options, addr)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -627,20 +626,19 @@ func AuthMethodsForProfile(p store.Profile) ([]ssh.AuthMethod, error) {
 }
 
 // hostKeyMode returns the configured host-key policy: "tofu" (default) or "strict".
-// Config key: hostkey.mode. Unknown or empty values default to tofu; only the
-// explicit value "strict" enables strict mode. Malformed values that look like
-// an attempt at a security mode (anything other than tofu/strict/empty) are
-// treated as a hard error so a typo cannot silently weaken policy.
+// Config key: hostkey.mode. Per-profile override: profile Options["hostkey.mode"]
+// wins over the global key (empty profile value falls through to global).
+// Unknown or empty values default to tofu; only the explicit value "strict"
+// enables strict mode. Malformed values that look like an attempt at a security
+// mode (anything other than tofu/strict/empty) are treated as a hard error so a
+// typo cannot silently weaken policy.
 // A corrupt config file also fails closed (cannot silently drop strict→tofu).
-func hostKeyMode() (string, error) {
+func hostKeyMode(profileOpts map[string]string) (string, error) {
 	cfg := internal.OpenConfig(internal.DefaultConfigPath())
-	if cfg == nil {
-		return "tofu", nil
+	if cfg != nil && cfg.LoadError() != nil {
+		return "", fmt.Errorf("hostkey.mode unavailable: %w", cfg.LoadError())
 	}
-	if err := cfg.LoadError(); err != nil {
-		return "", fmt.Errorf("hostkey.mode unavailable: %w", err)
-	}
-	mode := strings.ToLower(strings.TrimSpace(cfg.Get("hostkey.mode")))
+	mode := strings.ToLower(strings.TrimSpace(internal.EffectiveOption(profileOpts, "hostkey.mode")))
 	switch mode {
 	case "", "tofu":
 		return "tofu", nil
@@ -657,7 +655,7 @@ func hostKeyMode() (string, error) {
 // TOFU persistence is fail-closed: lock, re-check, write, fsync, and close must
 // all succeed or the connection is aborted. Host identity is port-scoped
 // ([host]:port) so distinct SSH ports do not share a key entry.
-func HostKeyCallback(_, addr string) (ssh.HostKeyCallback, error) {
+func HostKeyCallback(profileOpts map[string]string, addr string) (ssh.HostKeyCallback, error) {
 	khPath := knownHostsFile()
 	if err := os.MkdirAll(filepath.Dir(khPath), 0700); err != nil {
 		return nil, fmt.Errorf("known_hosts dir: %w", err)
@@ -667,7 +665,7 @@ func HostKeyCallback(_, addr string) (ssh.HostKeyCallback, error) {
 	// which would let host:22 and host:2222 share the same TOFU identity.
 	normalized := []string{knownhosts.Normalize(addr)}
 
-	mode, modeErr := hostKeyMode()
+	mode, modeErr := hostKeyMode(profileOpts)
 	if modeErr != nil {
 		return nil, modeErr
 	}

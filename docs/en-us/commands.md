@@ -18,7 +18,7 @@ qssh --add myserver --host example.com --user deploy --auth agent
 ```
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--host <host>` | SSH hostname or IP address |
 | `--port <port>` | SSH port (default: `22`) |
 | `--user <user>` | SSH username |
@@ -84,7 +84,7 @@ qssh --add srv --host 10.0.0.1 --user root --auth password --password x \
 ## Authentication Methods
 
 | Method | CLI Flag | Requires |
-|--------|----------|----------|
+| -------- | ---------- | ---------- |
 | `password` | `--auth password` | `--password` |
 | `key` | `--auth key` | `--key-path`; optional `--key-passphrase` |
 | `agent` | `--auth agent` | `SSH_AUTH_SOCK` |
@@ -177,6 +177,7 @@ connection drop (unless SFTP is mounted).
 ---
 
 <a id="jump-hosts"></a>
+
 ## Jump Hosts (Proxy Chains)
 
 A profile can designate another profile as a jump host. Multi-hop chains
@@ -208,6 +209,28 @@ qssh --last                  # most recent entry
 
 History is capped by `history.max_size` (default 5 MB). See
 [config.md](config.md).
+
+### Command recording
+
+How much of each `--exec` command is stored in history is controlled by a
+three-level mode. The safe default (`masked`) persists only the command name
+(`docker compose up -d` → `docker`), so secrets passed as arguments never
+reach disk.
+
+| Mode | Behavior |
+| ------ | ---------- |
+| `full` | Persist the entire command line |
+| `masked` (default) | Persist only the first token (command name) |
+| `off` | Persist no command at all |
+
+```bash
+# Global default
+qssh --config set history.record_commands full
+
+# Per-profile override (wins over global)
+qssh --add myserver --host 1.2.3.4 --set-option history.record_commands=off
+qssh --edit myserver --set-option history.record_commands=masked
+```
 
 ---
 

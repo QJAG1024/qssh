@@ -96,11 +96,11 @@ func editNonInteractive(p *store.Profile, opts AddOpts) {
 		}
 	}
 	if opts.Options != nil {
-		if p.Options == nil {
-			p.Options = make(map[string]string, len(opts.Options))
-		}
-		for k, v := range opts.Options {
-			p.Options[k] = v
+		var err error
+		p.Options, err = internal.ApplyOptionMap(p.Options, opts.Options)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "options: %v\n", err)
+			os.Exit(1)
 		}
 	}
 	if opts.Proxy != "" {
@@ -179,11 +179,11 @@ func editInteractive(s *store.Store, p *store.Profile) {
 				}
 			} else if optStr != "" {
 				parsed := parseOptionString(optStr)
-				if p.Options == nil {
-					p.Options = make(map[string]string, len(parsed))
-				}
-				for k, v := range parsed {
-					p.Options[k] = v
+				var err error
+				p.Options, err = internal.ApplyOptionMap(p.Options, parsed)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "options: %v\n", err)
+					os.Exit(1)
 				}
 			}
 		case 5: // Tags
