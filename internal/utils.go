@@ -2,6 +2,7 @@ package internal
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -62,9 +63,9 @@ func ReadPassword(label string) (string, error) {
 
 // Confirm prompts for a yes/no answer. Returns true if the user confirms.
 func Confirm(label string, defaultYes bool) bool {
-	suffix := " [y/N]: "
+	suffix := i18n.T("prompt.confirm_no")
 	if defaultYes {
-		suffix = " [Y/n]: "
+		suffix = i18n.T("prompt.confirm_yes")
 	}
 	fmt.Printf("%s%s", label, suffix)
 
@@ -204,9 +205,9 @@ func SelectPrompt(label string, items []string, defaultVal string) string {
 		fmt.Printf("  %d) %s\n", i+1, item)
 	}
 	if defaultVal != "" {
-		fmt.Printf("Select [%s]: ", defaultVal)
+		fmt.Printf("%s [%s]: ", i18n.T("prompt.select"), defaultVal)
 	} else {
-		fmt.Printf("Select [1]: ")
+		fmt.Printf("%s [1]: ", i18n.T("prompt.select"))
 	}
 	line := readLine()
 	if line == "" {
@@ -237,12 +238,12 @@ func ReadPasswordWithConfirm(label string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	pass2, err := ReadPassword(label + " (confirm)")
+	pass2, err := ReadPassword(label + " " + i18n.T("password.confirm_suffix"))
 	if err != nil {
 		return "", err
 	}
 	if pass != pass2 {
-		return "", fmt.Errorf("passwords do not match")
+		return "", errors.New(i18n.T("password.mismatch"))
 	}
 	return pass, nil
 }

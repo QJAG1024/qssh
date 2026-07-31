@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"qssh/internal/i18n"
 	"qssh/sftpproxy"
 )
 
@@ -13,7 +14,7 @@ import (
 func Rename(oldName, newName string) {
 	s, err := openStore()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening store: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("rename.store_error")+"\n", err)
 		os.Exit(1)
 	}
 
@@ -27,9 +28,9 @@ func Rename(oldName, newName string) {
 	_ = sftpproxy.Stop(oldName)
 
 	if err := s.Rename(oldName, newName); err != nil {
-		fmt.Fprintf(os.Stderr, "Error renaming profile: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("rename.error")+"\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Profile %q renamed to %q.\n", oldName, newName)
+	fmt.Printf(i18n.T("profile.renamed")+"\n", oldName, newName)
 }

@@ -129,19 +129,19 @@ func addNonInteractive(p *store.Profile, opts AddOpts) {
 
 func addInteractive(s *store.Store, p *store.Profile, opts AddOpts) {
 	fmt.Println(strings.Repeat("─", 50))
-	fmt.Printf("  Creating profile: %s\n", p.Name)
+	fmt.Printf(i18n.T("add.panel.title")+"\n", p.Name)
 	fmt.Println(strings.Repeat("─", 50))
 	fmt.Println()
 
 	// Host
-	p.Host = internal.Prompt("Host", "")
+	p.Host = internal.Prompt(i18n.T("add.prompt.host"), "")
 	if p.Host == "" {
 		fmt.Fprintln(os.Stderr, i18n.T("field.required_host"))
 		os.Exit(1)
 	}
 
 	// Port
-	portStr := internal.Prompt("Port", "22")
+	portStr := internal.Prompt(i18n.T("add.prompt.port"), "22")
 	p.Port, _ = strconv.Atoi(portStr)
 
 	// User
@@ -150,7 +150,7 @@ func addInteractive(s *store.Store, p *store.Profile, opts AddOpts) {
 	if defaultUser == "" {
 		defaultUser = os.Getenv("USERNAME")
 	}
-	p.User = internal.Prompt("User", defaultUser)
+	p.User = internal.Prompt(i18n.T("add.prompt.user"), defaultUser)
 	if p.User == "" {
 		fmt.Fprintln(os.Stderr, i18n.T("field.required_user"))
 		os.Exit(1)
@@ -158,11 +158,11 @@ func addInteractive(s *store.Store, p *store.Profile, opts AddOpts) {
 
 	// Auth method — numbered selection
 	authMethods := validAuthMethods
-	authStr := internal.SelectPrompt("Auth method:", authMethods, "password")
+	authStr := internal.SelectPrompt(i18n.T("add.prompt.auth"), authMethods, "password")
 	switch strings.ToLower(authStr) {
 	case "password", "p":
 		p.Auth = store.AuthPassword
-		pass, err := internal.ReadPasswordWithConfirm("Password")
+		pass, err := internal.ReadPasswordWithConfirm(i18n.T("add.prompt.password"))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, i18n.T("password.read_error")+"\n", err)
 			os.Exit(1)
@@ -170,14 +170,14 @@ func addInteractive(s *store.Store, p *store.Profile, opts AddOpts) {
 		p.Password = pass
 	case "key", "k":
 		p.Auth = store.AuthKey
-		p.KeyPath = internal.Prompt("Key path", "~/.ssh/id_ed25519")
+		p.KeyPath = internal.Prompt(i18n.T("add.prompt.keypath"), "~/.ssh/id_ed25519")
 		p.KeyPath = internal.ExpandPath(p.KeyPath)
 		// Verify key file exists
 		if _, err := os.Stat(p.KeyPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: key file %q not found: %v\n", p.KeyPath, err)
+			fmt.Fprintf(os.Stderr, i18n.T("add.warn.key_missing")+"\n", p.KeyPath, err)
 		}
-		if internal.Confirm("Key has passphrase?", false) {
-			pass, err := internal.ReadPassword("Key passphrase")
+		if internal.Confirm(i18n.T("add.confirm.keypass"), false) {
+			pass, err := internal.ReadPassword(i18n.T("add.prompt.keypass"))
 			if err != nil {
 				fmt.Fprintf(os.Stderr, i18n.T("password.read_error")+"\n", err)
 				os.Exit(1)
@@ -191,22 +191,22 @@ func addInteractive(s *store.Store, p *store.Profile, opts AddOpts) {
 	}
 
 	// Proxy (jump host)
-	proxy := internal.Prompt("ProxyJump profile (optional)", "")
+	proxy := internal.Prompt(i18n.T("add.prompt.proxy"), "")
 	if proxy != "" {
 		// Validate proxy profile exists
 		if _, exists := s.Get(proxy); !exists {
-			fmt.Fprintf(os.Stderr, "Warning: proxy profile %q not found, will be created later\n", proxy)
+			fmt.Fprintf(os.Stderr, i18n.T("add.warn.proxy_missing")+"\n", proxy)
 		}
 		// Cycle detection: proxy cannot point to self
 		if proxy == p.Name {
-			fmt.Fprintln(os.Stderr, "Error: proxy cannot point to the same profile")
+			fmt.Fprintln(os.Stderr, i18n.T("add.error.self_proxy"))
 			os.Exit(1)
 		}
 		p.Proxy = proxy
 	}
 
 	// Options
-	optStr := internal.Prompt("Options (comma-separated KEY=VALUE, optional)", "")
+	optStr := internal.Prompt(i18n.T("add.prompt.options"), "")
 	if optStr != "" {
 		parsed := parseOptionString(optStr)
 		var err error
@@ -218,7 +218,7 @@ func addInteractive(s *store.Store, p *store.Profile, opts AddOpts) {
 	}
 
 	// Tags
-	tagsStr := internal.Prompt("Tags (comma-separated, optional)", "")
+	tagsStr := internal.Prompt(i18n.T("add.prompt.tags"), "")
 	if tagsStr != "" {
 		p.Tags = parseTags(tagsStr)
 	}
@@ -226,7 +226,7 @@ func addInteractive(s *store.Store, p *store.Profile, opts AddOpts) {
 	// Preview summary
 	printSummary(*p)
 
-	if !internal.Confirm("Save profile?", true) {
+	if !internal.Confirm(i18n.T("add.prompt.save"), true) {
 		fmt.Println(i18n.T("profile.cancelled"))
 		os.Exit(0)
 	}
@@ -251,36 +251,36 @@ func parseTags(s string) []string {
 func printSummary(p store.Profile) {
 	fmt.Println()
 	fmt.Println(strings.Repeat("─", 40))
-	fmt.Println("  Preview")
+	fmt.Println("  " + i18n.T("add.preview.title"))
 	fmt.Println(strings.Repeat("─", 40))
-	fmt.Printf("  Name:      %s\n", p.Name)
-	fmt.Printf("  Host:      %s:%d\n", p.Host, p.Port)
-	fmt.Printf("  User:      %s\n", p.User)
-	fmt.Printf("  Auth:      %s\n", p.Auth)
+	fmt.Printf("  %-11s %s\n", i18n.T("add.preview.name")+":", p.Name)
+	fmt.Printf("  %-11s %s:%d\n", i18n.T("add.preview.host")+":", p.Host, p.Port)
+	fmt.Printf("  %-11s %s\n", i18n.T("add.preview.user")+":", p.User)
+	fmt.Printf("  %-11s %s\n", i18n.T("add.preview.auth")+":", p.Auth)
 	switch p.Auth {
 	case store.AuthPassword:
 		if p.Password != "" {
-			fmt.Println("  Password:  (set)")
+			fmt.Printf("  %-11s %s\n", i18n.T("add.preview.password")+":", i18n.T("add.preview.set"))
 		}
 	case store.AuthKey:
-		fmt.Printf("  Key path:  %s\n", p.KeyPath)
+		fmt.Printf("  %-11s %s\n", i18n.T("add.preview.keypath")+":", p.KeyPath)
 		if p.KeyPassphrase != "" {
-			fmt.Println("  Passphrase: (set)")
+			fmt.Printf("  %-11s %s\n", i18n.T("add.preview.passphrase")+":", i18n.T("add.preview.set"))
 		}
 	case store.AuthAgent:
-		fmt.Println("  Agent:     (SSH agent)")
+		fmt.Println("  " + i18n.T("add.preview.agent"))
 	}
 	if p.Proxy != "" {
-		fmt.Printf("  Proxy:     %s\n", p.Proxy)
+		fmt.Printf("  %-11s %s\n", i18n.T("add.preview.proxy")+":", p.Proxy)
 	}
 	if len(p.Options) > 0 {
-		fmt.Println("  Options:")
+		fmt.Println("  " + i18n.T("add.preview.options") + ":")
 		for k, v := range p.Options {
 			fmt.Printf("    %s = %s\n", k, v)
 		}
 	}
 	if len(p.Tags) > 0 {
-		fmt.Printf("  Tags:      %s\n", strings.Join(p.Tags, ", "))
+		fmt.Printf("  %-11s %s\n", i18n.T("add.preview.tags")+":", strings.Join(p.Tags, ", "))
 	}
 	fmt.Println(strings.Repeat("─", 40))
 	fmt.Println()

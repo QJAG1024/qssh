@@ -34,9 +34,9 @@ func Copy(oldName, newName string) {
 	newP.ConnectionCount = 0
 
 	if err := s.Add(newP); err != nil {
-		fmt.Fprintf(os.Stderr, "Error copying profile: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("copy.error")+"\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Profile %q copied to %q.\n", oldName, newName)
+	fmt.Printf(i18n.T("profile.copied")+"\n", oldName, newName)
 }

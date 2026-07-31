@@ -15,6 +15,7 @@ import (
 	"golang.org/x/term"
 
 	"qssh/internal"
+	"qssh/internal/i18n"
 )
 
 // daemonRunning checks if a daemon socket exists and responds to ping.
@@ -272,14 +273,14 @@ func dialDaemon(profile string) (net.Conn, error) {
 // StartDaemon starts a persistent daemon for a profile.
 func StartDaemon(profile string) {
 	if daemonRunning(profile) {
-		fmt.Println("daemon is already running")
+		fmt.Println(i18n.T("daemon.already_running"))
 		return
 	}
 	if err := forkDaemon(profile, "persistent"); err != nil {
 		fmt.Fprintf(os.Stderr, "start daemon: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("daemon started for %q\n", profile)
+	fmt.Printf(i18n.T("daemon.started")+"\n", profile)
 }
 
 // StopDaemon stops a running daemon.
@@ -288,7 +289,7 @@ func StopDaemon(profile string) {
 		fmt.Fprintf(os.Stderr, "stop daemon: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("daemon stopped for %q\n", profile)
+	fmt.Printf(i18n.T("daemon.stopped")+"\n", profile)
 }
 
 // startManagedDaemon forks a managed daemon and waits for it to be ready.

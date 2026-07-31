@@ -18,6 +18,7 @@ import (
 	"github.com/pkg/sftp"
 
 	"qssh/internal"
+	"qssh/internal/i18n"
 	"qssh/internal/privacy"
 	"qssh/sftpproxy"
 	"qssh/sshclient"
@@ -815,7 +816,7 @@ func (d *daemon) handleStop(w *connWriter, force bool) {
 		if sftpActive && d.mode == daemonPersistent {
 			_ = w.writeJSON(daemonResp{
 				Type: "error",
-				Msg:  "SFTP proxy is running (mount active), unmount first or force stop",
+				Msg:  i18n.T("sftp.mount_active"),
 			})
 			return
 		}

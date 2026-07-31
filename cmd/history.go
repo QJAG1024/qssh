@@ -14,7 +14,7 @@ import (
 func History(profile string, lastOnly bool) {
 	entries, err := internal.ReadHistory()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading history: %v\n", err)
+		fmt.Fprintf(os.Stderr, i18n.T("history.error")+"\n", err)
 		os.Exit(1)
 	}
 

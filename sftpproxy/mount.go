@@ -179,7 +179,7 @@ func Start(name, bindAddr string, port int, allowRemote bool) error {
 		}
 		switch entry.Status {
 		case "ready":
-			fmt.Printf("SFTP proxy: %s\n", sftpURL)
+			fmt.Printf(i18n.T("sftp.proxy_started")+"\n", sftpURL)
 			if entry.Fingerprint != "" {
 				fmt.Fprintf(os.Stderr, "  SSH fingerprint: %s\n", entry.Fingerprint)
 			}

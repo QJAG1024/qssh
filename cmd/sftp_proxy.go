@@ -126,7 +126,7 @@ func SftpStart(name, cliBind string, port int, deprecatedAllowRemote bool) {
 			os.Exit(1)
 		}
 		sftpURL := fmt.Sprintf("sftp://%s:%d", bindAddr, port)
-		fmt.Printf("SFTP proxy: %s\n", sftpURL)
+		fmt.Printf(i18n.T("sftp.proxy_started")+"\n", sftpURL)
 		if fingerprint != "" {
 			fmt.Fprintf(os.Stderr, "  SSH fingerprint: %s\n", fingerprint)
 		}

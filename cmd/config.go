@@ -151,7 +151,7 @@ func editConfigKey(c *internal.Config, key string, meta configKeyMeta) {
 		if defaultVal == "" {
 			defaultVal = meta.defaultVal
 		}
-		val = internal.Prompt("Value", defaultVal)
+		val = internal.Prompt(i18n.T("config.panel.value"), defaultVal)
 	}
 	if val == "" {
 		// User wants to unset
@@ -176,7 +176,7 @@ func editConfigKey(c *internal.Config, key string, meta configKeyMeta) {
 func unsetConfigInteractive(c *internal.Config) {
 	all := c.All()
 	if len(all) == 0 {
-		fmt.Println("No keys to unset")
+		fmt.Println(i18n.T("config.no_keys"))
 		return
 	}
 	keys := sortedKeys2(all)

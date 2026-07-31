@@ -116,65 +116,65 @@ func editNonInteractive(p *store.Profile, opts AddOpts) {
 
 func editInteractive(s *store.Store, p *store.Profile) {
 	menuItems := []string{
-		"Host/Port/User",
-		"Auth method & credentials",
-		"ProxyJump",
-		"Options",
-		"Tags",
-		"Save & exit",
-		"Discard",
+		i18n.T("edit.menu.host"),
+		i18n.T("edit.menu.auth"),
+		i18n.T("edit.menu.proxy"),
+		i18n.T("edit.menu.options"),
+		i18n.T("edit.menu.tags"),
+		i18n.T("edit.menu.save"),
+		i18n.T("edit.menu.discard"),
 	}
 
 	for {
 		fmt.Println()
 		fmt.Println(strings.Repeat("─", 50))
-		fmt.Printf("  Editing: %s  (%s@%s:%d)\n", p.Name, p.User, p.Host, p.Port)
+		fmt.Printf(i18n.T("edit.panel.title")+"\n", p.Name, p.User, p.Host, p.Port)
 		fmt.Println(strings.Repeat("─", 50))
 		for i, item := range menuItems {
 			fmt.Printf("  %d) %s\n", i+1, item)
 		}
 		fmt.Println()
 
-		choice := internal.Prompt("Choose", "")
+		choice := internal.Prompt(i18n.T("edit.prompt.choose"), "")
 		if choice == "" {
 			choice = "6" // default: Save & exit
 		}
 
 		n, err := strconv.Atoi(choice)
 		if err != nil || n < 1 || n > len(menuItems) {
-			fmt.Println("Invalid choice")
+			fmt.Println(i18n.T("edit.error.invalid"))
 			continue
 		}
 
 		switch n {
 		case 1: // Host/Port/User
-			host := internal.Prompt("Host", p.Host)
+			host := internal.Prompt(i18n.T("edit.prompt.host"), p.Host)
 			if host != "" {
 				p.Host = host
 			}
-			portStr := internal.Prompt("Port", strconv.Itoa(p.Port))
+			portStr := internal.Prompt(i18n.T("edit.prompt.port"), strconv.Itoa(p.Port))
 			if port, err := strconv.Atoi(portStr); err == nil && port > 0 {
 				p.Port = port
 			}
-			user := internal.Prompt("User", p.User)
+			user := internal.Prompt(i18n.T("edit.prompt.user"), p.User)
 			if user != "" {
 				p.User = user
 			}
 		case 2: // Auth
 			editAuth(p)
 		case 3: // Proxy
-			proxy := internal.Prompt("ProxyJump profile (empty to remove)", p.Proxy)
+			proxy := internal.Prompt(i18n.T("edit.prompt.proxy"), p.Proxy)
 			if proxy == "" && p.Proxy != "" {
-				if internal.Confirm("Remove proxy?", false) {
+				if internal.Confirm(i18n.T("edit.confirm.remove_proxy"), false) {
 					p.Proxy = ""
 				}
 			} else if proxy != "" {
 				p.Proxy = proxy
 			}
 		case 4: // Options
-			optStr := internal.Prompt("Options (comma-separated KEY=VALUE)", optionString(p.Options))
+			optStr := internal.Prompt(i18n.T("edit.prompt.options"), optionString(p.Options))
 			if optStr == "" && len(p.Options) > 0 {
-				if internal.Confirm("Remove all options?", false) {
+				if internal.Confirm(i18n.T("edit.confirm.remove_opts"), false) {
 					p.Options = nil
 				}
 			} else if optStr != "" {
@@ -182,22 +182,22 @@ func editInteractive(s *store.Store, p *store.Profile) {
 				var err error
 				p.Options, err = internal.ApplyOptionMap(p.Options, parsed)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "options: %v\n", err)
+					fmt.Fprintf(os.Stderr, i18n.T("edit.error.options")+"\n", err)
 					os.Exit(1)
 				}
 			}
 		case 5: // Tags
-			tagsStr := internal.Prompt("Tags (comma-separated)", strings.Join(p.Tags, ", "))
+			tagsStr := internal.Prompt(i18n.T("edit.prompt.tags"), strings.Join(p.Tags, ", "))
 			if tagsStr != "" {
 				p.Tags = parseTags(tagsStr)
 			}
 		case 6: // Save & exit
 			printSummary(*p)
-			if internal.Confirm("Save changes?", true) {
+			if internal.Confirm(i18n.T("edit.confirm.save"), true) {
 				return
 			}
 		case 7: // Discard
-			if internal.Confirm("Discard all changes?", false) {
+			if internal.Confirm(i18n.T("edit.confirm.discard"), false) {
 				fmt.Println(i18n.T("profile.cancelled"))
 				os.Exit(0)
 			}
@@ -209,13 +209,13 @@ func editAuth(p *store.Profile) {
 	fmt.Println()
 	currentAuth := string(p.Auth)
 	authMethods := validAuthMethods
-	authStr := internal.SelectPrompt("Auth method:", authMethods, currentAuth)
+	authStr := internal.SelectPrompt(i18n.T("edit.prompt.auth"), authMethods, currentAuth)
 
 	switch strings.ToLower(authStr) {
 	case "password", "p":
 		p.Auth = store.AuthPassword
-		if internal.Confirm("Change password?", false) {
-			pass, err := internal.ReadPasswordWithConfirm("New password")
+		if internal.Confirm(i18n.T("edit.confirm.changepass"), false) {
+			pass, err := internal.ReadPasswordWithConfirm(i18n.T("edit.prompt.newpass"))
 			if err != nil {
 				fmt.Fprintf(os.Stderr, i18n.T("password.read_error")+"\n", err)
 				os.Exit(1)
@@ -224,12 +224,12 @@ func editAuth(p *store.Profile) {
 		}
 	case "key", "k":
 		p.Auth = store.AuthKey
-		keyPath := internal.Prompt("Key path", p.KeyPath)
+		keyPath := internal.Prompt(i18n.T("edit.prompt.keypath"), p.KeyPath)
 		if keyPath != "" {
 			p.KeyPath = internal.ExpandPath(keyPath)
 		}
-		if internal.Confirm("Key has passphrase?", p.KeyPassphrase != "") {
-			pass, err := internal.ReadPassword("Key passphrase")
+		if internal.Confirm(i18n.T("edit.confirm.keypass"), p.KeyPassphrase != "") {
+			pass, err := internal.ReadPassword(i18n.T("edit.prompt.keypass"))
 			if err != nil {
 				fmt.Fprintf(os.Stderr, i18n.T("password.read_error")+"\n", err)
 				os.Exit(1)
