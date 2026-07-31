@@ -81,7 +81,7 @@ func configInteractive() {
 			}
 			desc := ""
 			if meta.desc != "" {
-				desc = "  ← " + meta.desc
+				desc = "  ← " + i18n.T(meta.desc)
 			}
 			fmt.Printf("  %2d) %-25s = %s%s\n", i+1, k, display, desc)
 		}
@@ -200,37 +200,38 @@ type configKeyMeta struct {
 }
 
 // configKnownKeys returns the list of known config keys with metadata.
+// desc holds an i18n key (rendered via i18n.T) so descriptions are localized.
 func configKnownKeys() map[string]configKeyMeta {
 	return map[string]configKeyMeta{
 		"hostkey.mode": {
-			desc:    "Host key verification policy",
+			desc:    "config.key.hostkey_mode",
 			options: []string{"tofu", "strict"},
 		},
 		"lang": {
-			desc:    "UI language (requires restart)",
+			desc:    "config.key.lang",
 			options: []string{"en-US", "zh-CN"},
 		},
 		"store.backend": {
-			desc:    "Encryption key storage backend",
+			desc:    "config.key.store_backend",
 			options: []string{"file", "keyring"},
 		},
 		"sftp.allow_non_loopback": {
-			desc:    "Allow SFTP proxy to bind non-loopback",
+			desc:    "config.key.sftp_allow_non_loopback",
 			options: []string{"false", "true"},
 		},
 		"sftp.bind": {
-			desc:       "Default SFTP proxy bind address",
+			desc:       "config.key.sftp_bind",
 			defaultVal: "127.0.0.1",
 		},
 		"term.mode": {
-			desc: "PTY $TERM passthrough (compat=force xterm)",
+			desc: "config.key.term_mode",
 		},
 		"history.record_commands": {
-			desc:    "Default command recording: full|masked|off",
+			desc:    "config.key.history_record_commands",
 			options: []string{"full", "masked", "off"},
 		},
 		"history.max_size": {
-			desc:       "History file size cap",
+			desc:       "config.key.history_max_size",
 			defaultVal: "5M",
 		},
 	}
