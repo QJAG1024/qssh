@@ -67,7 +67,7 @@ func resolveSFTPBind(cliBind string, profileOpts map[string]string) (addr string
 // warnNonLoopback prints a 2-second warning before proceeding with a
 // non-loopback bind from an explicit --bind flag.
 func warnNonLoopback(addr string) {
-	fmt.Fprintf(os.Stderr, "Warning: SFTP proxy binds to %s (non-loopback). The proxy accepts any password — the remote server's file system will be reachable from the network. Proceeding in 2s...\n", addr)
+	fmt.Fprintf(os.Stderr, i18n.T("sftp.bind.warn_cli")+"\n", addr)
 	time.Sleep(2 * time.Second)
 }
 
@@ -75,7 +75,7 @@ func warnNonLoopback(addr string) {
 // cliBind is the raw --bind flag value (empty = resolve profile/global/default).
 func SftpStart(name, cliBind string, port int, deprecatedAllowRemote bool) {
 	if deprecatedAllowRemote {
-		fmt.Fprintln(os.Stderr, "Warning: --sftp-allow-remote is deprecated and no longer needed; non-loopback binds are authorized by --bind or per-profile sftp.bind.")
+		fmt.Fprintln(os.Stderr, i18n.T("sftp.bind.deprecated_flag"))
 	}
 
 	// Load the profile once; its Options drive the bind resolution unless a
@@ -106,8 +106,8 @@ func SftpStart(name, cliBind string, port int, deprecatedAllowRemote bool) {
 		if allowRemote {
 			// authorized via sftp.allow_non_loopback=true
 		} else if !sftpproxy.IsLoopbackAddr(bindAddr) {
-			fmt.Fprintf(os.Stderr, "refusing to start: global sftp.bind=%s is non-loopback but sftp.allow_non_loopback is not true.\n", bindAddr)
-			fmt.Fprintln(os.Stderr, "If this profile should listen on a non-loopback address, set sftp.bind on the profile itself (per-profile choice authorizes it). Otherwise set sftp.allow_non_loopback=true to accept the risk globally.")
+			fmt.Fprintf(os.Stderr, i18n.T("sftp.bind.refuse_global")+"\n", bindAddr)
+			fmt.Fprintln(os.Stderr, i18n.T("sftp.bind.refuse_hint"))
 			os.Exit(1)
 		}
 	}

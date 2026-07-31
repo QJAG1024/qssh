@@ -69,7 +69,7 @@ func configInteractive() {
 	for {
 		fmt.Println()
 		fmt.Println(strings.Repeat("─", 50))
-		fmt.Println("  QSSH Configuration")
+		fmt.Println(i18n.T("config.panel.title"))
 		fmt.Println(strings.Repeat("─", 50))
 
 		for i, k := range keys {
@@ -77,7 +77,7 @@ func configInteractive() {
 			val := all[k]
 			display := val
 			if display == "" {
-				display = "(not set)"
+				display = i18n.T("config.panel.not_set")
 			}
 			desc := ""
 			if meta.desc != "" {
@@ -86,12 +86,12 @@ func configInteractive() {
 			fmt.Printf("  %2d) %-25s = %s%s\n", i+1, k, display, desc)
 		}
 		fmt.Println(strings.Repeat("─", 50))
-		fmt.Println("  s) set a key")
-		fmt.Println("  u) unset a key")
-		fmt.Println("  q) quit")
+		fmt.Println("  " + i18n.T("config.panel.set"))
+		fmt.Println("  " + i18n.T("config.panel.unset"))
+		fmt.Println("  " + i18n.T("config.panel.quit"))
 		fmt.Println()
 
-		choice := internal.Prompt("Action", "q")
+		choice := internal.Prompt(i18n.T("config.panel.action"), "q")
 		switch strings.ToLower(choice) {
 		case "q", "":
 			return
@@ -131,7 +131,7 @@ func setConfigInteractive(c *internal.Config, known map[string]configKeyMeta) {
 	}
 	fmt.Println()
 
-	key := internal.Prompt("Key", "")
+	key := internal.Prompt(i18n.T("config.panel.key"), "")
 	if key == "" {
 		return
 	}
@@ -145,7 +145,7 @@ func setConfigInteractive(c *internal.Config, known map[string]configKeyMeta) {
 func editConfigKey(c *internal.Config, key string, meta configKeyMeta) {
 	val := c.Get(key)
 	if len(meta.options) > 0 {
-		val = internal.SelectPrompt("Value:", meta.options, val)
+		val = internal.SelectPrompt(i18n.T("config.panel.value")+":", meta.options, val)
 	} else {
 		defaultVal := val
 		if defaultVal == "" {
@@ -155,7 +155,7 @@ func editConfigKey(c *internal.Config, key string, meta configKeyMeta) {
 	}
 	if val == "" {
 		// User wants to unset
-		if internal.Confirm("Unset this key?", false) {
+		if internal.Confirm(i18n.T("config.panel.unset_confirm"), false) {
 			if err := c.Set(key, ""); err != nil {
 				fmt.Fprintf(os.Stderr, i18n.T("config.save_error")+"\n", err)
 				return
@@ -180,7 +180,7 @@ func unsetConfigInteractive(c *internal.Config) {
 		return
 	}
 	keys := sortedKeys2(all)
-	key := internal.SelectPrompt("Unset which key?", keys, "")
+	key := internal.SelectPrompt(i18n.T("config.panel.unset_which"), keys, "")
 	if key == "" {
 		return
 	}
@@ -219,7 +219,7 @@ func configKnownKeys() map[string]configKeyMeta {
 			options: []string{"false", "true"},
 		},
 		"sftp.bind": {
-			desc:    "Default SFTP proxy bind address",
+			desc:       "Default SFTP proxy bind address",
 			defaultVal: "127.0.0.1",
 		},
 		"term.mode": {
@@ -323,10 +323,10 @@ func warnGlobalBindIfRisky(key, value string) {
 		v := strings.ToLower(strings.TrimSpace(cfg.Get("sftp.allow_non_loopback")))
 		allow = v == "true" || v == "1" || v == "yes"
 	}
-	fmt.Fprintln(os.Stderr, "Warning: global sftp.bind is non-loopback. qssh will refuse to start such binds unless sftp.allow_non_loopback=true.")
+	fmt.Fprintln(os.Stderr, i18n.T("sftp.bind.set_warn"))
 	if !allow {
-		fmt.Fprintln(os.Stderr, "If you understand the risk, run: qssh --config set sftp.allow_non_loopback true")
-		fmt.Fprintln(os.Stderr, "Tip: set sftp.bind on a single profile instead (per-profile choice authorizes it): qssh --edit <profile> --set-option sftp.bind="+value)
+		fmt.Fprintln(os.Stderr, i18n.T("sftp.bind.set_hint_allow"))
+		fmt.Fprintf(os.Stderr, i18n.T("sftp.bind.set_hint_profile")+"\n", value)
 	}
 }
 

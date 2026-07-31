@@ -47,14 +47,14 @@ func daemonPidPath(profile string) string {
 // --- Wire protocol (JSON lines, newline-delimited) ---
 
 type daemonReq struct {
-	Type      string   `json:"type"`                 // "exec","stdin","stdin_eof","mount","unmount","stop","ping"
-	Cmd       string   `json:"cmd,omitempty"`        // legacy shell command string for exec
-	Args      []string `json:"args,omitempty"`       // raw argv for exec (preferred; shell-quoted remotely)
-	Data      string   `json:"data,omitempty"`       // base64 stdin chunk
-	BindAddr  string `json:"bind_addr,omitempty"`  // for mount
-	MountPort int    `json:"mount_port,omitempty"` // for mount (0 = random)
-	AllowRemote bool `json:"allow_remote,omitempty"` // for mount: client-authorized non-loopback bind
-	Force     bool   `json:"force,omitempty"`      // for stop: terminate even with active cmds/SFTP
+	Type        string   `json:"type"`                   // "exec","stdin","stdin_eof","mount","unmount","stop","ping"
+	Cmd         string   `json:"cmd,omitempty"`          // legacy shell command string for exec
+	Args        []string `json:"args,omitempty"`         // raw argv for exec (preferred; shell-quoted remotely)
+	Data        string   `json:"data,omitempty"`         // base64 stdin chunk
+	BindAddr    string   `json:"bind_addr,omitempty"`    // for mount
+	MountPort   int      `json:"mount_port,omitempty"`   // for mount (0 = random)
+	AllowRemote bool     `json:"allow_remote,omitempty"` // for mount: client-authorized non-loopback bind
+	Force       bool     `json:"force,omitempty"`        // for stop: terminate even with active cmds/SFTP
 }
 
 type daemonResp struct {

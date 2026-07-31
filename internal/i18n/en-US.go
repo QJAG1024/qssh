@@ -102,6 +102,28 @@ var enUS = map[string]string{
 	"sftp.stopped":        "SFTP stopped",
 	"sftp.daemon_failed":  "daemon failed",
 
+	// SFTP bind authorization
+	"sftp.bind.warn_cli":        "Warning: SFTP proxy binds to %s (non-loopback). The proxy accepts any password — the remote server's file system will be reachable from the network. Proceeding in 2s...",
+	"sftp.bind.deprecated_flag": "Warning: --sftp-allow-remote is deprecated and no longer needed; non-loopback binds are authorized by --bind or per-profile sftp.bind.",
+	"sftp.bind.refuse_global":   "refusing to start: global sftp.bind=%s is non-loopback but sftp.allow_non_loopback is not true.",
+	"sftp.bind.refuse_hint":     "If this profile should listen on a non-loopback address, set sftp.bind on the profile itself (per-profile choice authorizes it). Otherwise set sftp.allow_non_loopback=true to accept the risk globally.",
+	"sftp.bind.set_warn":        "Warning: global sftp.bind is non-loopback. qssh will refuse to start such binds unless sftp.allow_non_loopback=true.",
+	"sftp.bind.set_hint_allow":  "If you understand the risk, run: qssh --config set sftp.allow_non_loopback true",
+	"sftp.bind.set_hint_profile": "Tip: set sftp.bind on a single profile instead (per-profile choice authorizes it): qssh --edit <profile> --set-option sftp.bind=%s",
+
+	// Config interactive panel
+	"config.panel.title":      "QSSH Configuration",
+	"config.panel.not_set":    "(not set)",
+	"config.panel.set":        "s) set a key",
+	"config.panel.unset":      "u) unset a key",
+	"config.panel.quit":       "q) quit",
+	"config.panel.action":     "Action",
+	"config.panel.key":        "Key",
+	"config.panel.value":      "Value",
+	"config.panel.unset_which": "Unset which key?",
+	"config.panel.unset_confirm": "Unset this key?",
+	"config.panel.remove_all":   "Remove all options?",
+
 	// List table headers
 	"list.header.name":      "Name",
 	"list.header.host":      "Host",

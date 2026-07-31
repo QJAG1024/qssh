@@ -102,6 +102,28 @@ var zhCN = map[string]string{
 	"sftp.stopped":        "SFTP 已停止",
 	"sftp.daemon_failed":  "守护进程启动失败",
 
+	// SFTP 绑定授权
+	"sftp.bind.warn_cli":        "警告：SFTP 代理绑定到 %s（非 loopback）。代理接受任意密码——远程服务器的文件系统将从网络可达。2 秒后继续...",
+	"sftp.bind.deprecated_flag": "警告：--sftp-allow-remote 已弃用且不再需要；非 loopback 绑定由 --bind 或 per-profile sftp.bind 授权。",
+	"sftp.bind.refuse_global":   "拒绝启动：全局 sftp.bind=%s 为非 loopback，但 sftp.allow_non_loopback 未设为 true。",
+	"sftp.bind.refuse_hint":     "如果该 profile 需要监听非 loopback 地址，请在 profile 上设置 sftp.bind（per-profile 的选择本身就是授权）。否则设置 sftp.allow_non_loopback=true 以全局接受风险。",
+	"sftp.bind.set_warn":        "警告：全局 sftp.bind 为非 loopback。除非 sftp.allow_non_loopback=true，否则 qssh 将拒绝启动此类绑定。",
+	"sftp.bind.set_hint_allow":  "如果你了解风险，请运行: qssh --config set sftp.allow_non_loopback true",
+	"sftp.bind.set_hint_profile": "提示：改为在单个 profile 上设置 sftp.bind（per-profile 的选择本身就是授权）：qssh --edit <profile> --set-option sftp.bind=%s",
+
+	// 配置交互面板
+	"config.panel.title":      "QSSH 配置",
+	"config.panel.not_set":    "（未设置）",
+	"config.panel.set":        "s) 设置一个键",
+	"config.panel.unset":      "u) 删除一个键",
+	"config.panel.quit":       "q) 退出",
+	"config.panel.action":     "操作",
+	"config.panel.key":        "键",
+	"config.panel.value":      "值",
+	"config.panel.unset_which": "删除哪个键？",
+	"config.panel.unset_confirm": "删除此键？",
+	"config.panel.remove_all":   "删除所有选项？",
+
 	// List table headers
 	"list.header.name":      "名称",
 	"list.header.host":      "主机",
