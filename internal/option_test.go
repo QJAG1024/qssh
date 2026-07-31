@@ -77,9 +77,8 @@ func TestApplyOptionMap(t *testing.T) {
 }
 
 func TestEffectiveOption(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	cfgPath := filepath.Join(dir, "qssh", "config.json")
+	cfgPath := filepath.Join(t.TempDir(), "qssh", "config.json")
+	t.Setenv("QSSH_CONFIG_PATH", cfgPath)
 
 	// No config, no profile opts -> "".
 	if got := EffectiveOption(nil, "term.mode"); got != "" {

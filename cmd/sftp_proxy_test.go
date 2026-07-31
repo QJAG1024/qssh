@@ -1,15 +1,17 @@
 package cmd
 
 import (
+	"path/filepath"
 	"testing"
 
 	"qssh/internal"
 )
 
-// isolateConfig points UserConfigDir at a temp dir for tests that read global
-// config (sftp.bind / sftp.allow_non_loopback).
+// isolateConfig points DefaultConfigPath at a temp file for tests that read
+// global config (sftp.bind / sftp.allow_non_loopback).
 func isolateConfig(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	cfgPath := filepath.Join(t.TempDir(), "qssh", "config.json")
+	t.Setenv("QSSH_CONFIG_PATH", cfgPath)
 }
 
 func TestResolveSFTPBind(t *testing.T) {

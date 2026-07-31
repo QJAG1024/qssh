@@ -93,9 +93,10 @@ func startTestSSHServer(t *testing.T, passwordCallback func(ssh.ConnMetadata, []
 
 // handleSessionReqs replies to PTY and shell requests from the client.
 // Must run in a goroutine.
-// testConfigDir isolates the test from the user's real ~/.config.
+// testConfigDir isolates the test from the user's real config on any
+// platform (UserConfigDir differs macOS vs Linux).
 func testConfigDir(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("QSSH_CONFIG_PATH", filepath.Join(t.TempDir(), "qssh", "config.json"))
 }
 
 func handleSessionReqs(reqs <-chan *ssh.Request, ch ssh.Channel) {
@@ -597,10 +598,11 @@ func TestHostKey_StrictRejectsUnknown(t *testing.T) {
 	os.Unsetenv("XDG_CONFIG_HOME")
 	t.Setenv("QSSH_KNOWN_HOSTS", filepath.Join(dir, "known_hosts"))
 
-	cfgDir, _ := os.UserConfigDir()
-	cfgDir = filepath.Join(cfgDir, "qssh")
-	os.MkdirAll(cfgDir, 0700)
-	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{"hostkey.mode":"strict"}`), 0600); err != nil {
+	// QSSH_CONFIG_PATH is platform-independent (UserConfigDir differs on
+	// macOS vs Linux); point it at a temp config.json.
+	cfgPath := filepath.Join(dir, "config.json")
+	t.Setenv("QSSH_CONFIG_PATH", cfgPath)
+	if err := os.WriteFile(cfgPath, []byte(`{"hostkey.mode":"strict"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -621,10 +623,9 @@ func TestHostKey_CorruptConfigFailsClosed(t *testing.T) {
 	os.Unsetenv("XDG_CONFIG_HOME")
 	t.Setenv("QSSH_KNOWN_HOSTS", filepath.Join(dir, "known_hosts"))
 
-	cfgDir, _ := os.UserConfigDir()
-	cfgDir = filepath.Join(cfgDir, "qssh")
-	os.MkdirAll(cfgDir, 0700)
-	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte("{not json"), 0600); err != nil {
+	cfgPath := filepath.Join(dir, "config.json")
+	t.Setenv("QSSH_CONFIG_PATH", cfgPath)
+	if err := os.WriteFile(cfgPath, []byte("{not json"), 0600); err != nil {
 		t.Fatal(err)
 	}
 

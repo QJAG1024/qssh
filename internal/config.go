@@ -19,7 +19,11 @@ type Config struct {
 }
 
 // DefaultConfigPath returns the default config file location.
+// Override with QSSH_CONFIG_PATH (used in tests and by scripts).
 func DefaultConfigPath() string {
+	if p := os.Getenv("QSSH_CONFIG_PATH"); p != "" {
+		return p
+	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		configDir = filepath.Join(os.Getenv("HOME"), ".config")

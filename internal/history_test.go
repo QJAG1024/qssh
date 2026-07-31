@@ -27,10 +27,10 @@ func TestMaskCommand(t *testing.T) {
 }
 
 func TestHistoryRecordMode(t *testing.T) {
-	// Point UserConfigDir at a temp dir so we don't touch any real config.
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	cfgPath := filepath.Join(dir, "qssh", "config.json")
+	// Point DefaultConfigPath at a temp file so we don't touch any real
+	// config on any platform (XDG_CONFIG_HOME only works on Linux).
+	cfgPath := filepath.Join(t.TempDir(), "qssh", "config.json")
+	t.Setenv("QSSH_CONFIG_PATH", cfgPath)
 
 	// 1. No config, no profile opts -> masked.
 	if got := HistoryRecordMode(nil); got != RecordMasked {
