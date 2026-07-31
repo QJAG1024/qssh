@@ -225,23 +225,27 @@ var enUS = map[string]string{
 	"time.minutes_ago": "%dm ago",
 	"time.hours_ago":   "%dh ago",
 
-	// Usage
-	"usage.text": `QSSH - SSH Credential Manager v%s
-
-Usage:
-  qssh <profile>                    Connect to a profile
-  qssh --add <name>                 Create a new profile
-  qssh --edit <name>                Edit an existing profile
-  qssh --list [filter]              List profiles (optional substring filter)
-  qssh --copy <old> <new>           Copy a profile
-  qssh --rename <old> <new>         Rename a profile
-  qssh --delete <name>              Delete a profile
-  qssh --exec <profile> <command>   Execute a command on a profile
-  qssh --sftp-start <name>          Start SFTP proxy for a profile
-  qssh --sftp-stop <name>           Stop SFTP proxy for a profile
-  qssh --daemon-start <name>        Start background daemon
-  qssh --daemon-stop <name>         Stop background daemon
-  qssh --history [name]             Show connection history
-  qssh --config [get|set ...]       View or modify config
-  qssh --version                    Print version`,
+	// Usage (structured, rendered by cmd.RenderUsage)
+	"usage.banner": "QSSH - SSH Credential Manager v%s",
+	"usage.usage":  "Usage",
+	"usage.subs":   "options",
+	"usage.group.create":  "Create & modify profiles",
+	"usage.group.connect": "Connect",
+	"usage.group.manage":  "Manage",
+	"usage.desc.add":        "Create a new profile",
+	"usage.desc.edit":       "Edit an existing profile",
+	"usage.desc.copy":       "Copy a profile",
+	"usage.desc.rename":     "Rename a profile",
+	"usage.desc.delete":     "Delete a profile",
+	"usage.desc.connect":    "Connect to a profile",
+	"usage.desc.exec":       "Run a command on a profile",
+	"usage.desc.sftp_start": "Start SFTP proxy for a profile",
+	"usage.desc.sftp_stop":  "Stop SFTP proxy for a profile",
+	"usage.desc.list":       "List profiles (optional substring filter)",
+	"usage.desc.history":    "Show connection history",
+	"usage.desc.daemon_start": "Start background daemon for connection reuse",
+	"usage.desc.daemon_stop":  "Stop a background daemon",
+	"usage.desc.config":     "View or modify config",
+	"usage.desc.privacy":    "Privacy mode: on|off|clear|status (sticky until reboot)",
+	"usage.desc.version":    "Print version",
 }

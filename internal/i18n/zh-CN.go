@@ -225,23 +225,27 @@ var zhCN = map[string]string{
 	"time.minutes_ago": "%d 分钟前",
 	"time.hours_ago":   "%d 小时前",
 
-	// Usage
-	"usage.text": `QSSH - SSH 凭据管理器 v%s
-
-用法:
-  qssh <profile>                    连接配置
-  qssh --add <name>                 创建新配置
-  qssh --edit <name>                编辑已有配置
-  qssh --list [filter]              列出配置（可选子串过滤）
-  qssh --copy <old> <new>           复制配置
-  qssh --rename <old> <new>         重命名配置
-  qssh --delete <name>              删除配置
-  qssh --exec <profile> <command>   在配置上执行命令
-  qssh --sftp-start <name>          启动 SFTP 代理
-  qssh --sftp-stop <name>           停止 SFTP 代理
-  qssh --daemon-start <name>        启动后台守护进程
-  qssh --daemon-stop <name>         停止后台守护进程
-  qssh --history [name]             查看连接历史
-  qssh --config [get|set ...]       查看或修改设置
-  qssh --version                    显示版本`,
+	// Usage（结构化，由 cmd.RenderUsage 渲染）
+	"usage.banner": "QSSH - SSH 凭据管理器 v%s",
+	"usage.usage":  "用法",
+	"usage.subs":   "选项",
+	"usage.group.create":  "创建与修改配置",
+	"usage.group.connect": "连接",
+	"usage.group.manage":  "管理",
+	"usage.desc.add":        "创建新配置",
+	"usage.desc.edit":       "编辑已有配置",
+	"usage.desc.copy":       "复制配置",
+	"usage.desc.rename":     "重命名配置",
+	"usage.desc.delete":     "删除配置",
+	"usage.desc.connect":    "连接配置",
+	"usage.desc.exec":       "在配置上执行命令",
+	"usage.desc.sftp_start": "启动 SFTP 代理",
+	"usage.desc.sftp_stop":  "停止 SFTP 代理",
+	"usage.desc.list":       "列出配置（可选子串过滤）",
+	"usage.desc.history":    "查看连接历史",
+	"usage.desc.daemon_start": "启动后台守护进程以复用连接",
+	"usage.desc.daemon_stop":  "停止后台守护进程",
+	"usage.desc.config":     "查看或修改设置",
+	"usage.desc.privacy":    "隐私模式: on|off|clear|status（粘性至重启）",
+	"usage.desc.version":    "显示版本",
 }

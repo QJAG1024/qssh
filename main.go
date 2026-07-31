@@ -112,7 +112,7 @@ func main() {
 	flag.BoolVar(&reveal, "reveal", false, "Show hosts/IPs for this process only (does not change sticky privacy)")
 	flag.Var(&privFlag, "privacy", "Privacy mode: on|off|clear|status (sticky until reboot; bare --privacy = status)")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, i18n.T("usage.text"), version)
+		cmd.RenderUsage(os.Stderr, version)
 	}
 	os.Args = normalizePrivacyArgs(os.Args)
 	flag.Parse()
