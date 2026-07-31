@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"qssh/internal"
 	"qssh/internal/i18n"
@@ -15,41 +17,129 @@ func init() {
 	sftpproxy.SetOpenStore(openStore)
 }
 
+// sftpBindOrigin records where the effective SFTP bind address came from.
+type sftpBindOrigin string
+
+const (
+	bindOriginCLI     sftpBindOrigin = "cli"     // --bind flag: explicit, warn+allow if non-loopback
+	bindOriginProfile sftpBindOrigin = "profile" // profile sftp.bind: per-profile choice authorizes
+	bindOriginGlobal  sftpBindOrigin = "global"  // global sftp.bind: needs sftp.allow_non_loopback=true
+	bindOriginDefault sftpBindOrigin = "default" // 127.0.0.1
+)
+
+// resolveSFTPBind determines the effective SFTP bind address and whether a
+// non-loopback bind is authorized, given the CLI --bind flag (may be empty)
+// and the profile's Options map.
+//
+// Precedence: CLI --bind > profile sftp.bind > global sftp.bind > 127.0.0.1.
+// Authorization by origin:
+//   - CLI: the user explicitly passed --bind, so a non-loopback address is
+//     authorized (a warning is printed by the caller before proceeding).
+//   - profile: the per-profile sftp.bind value is itself the authorization —
+//     configuring it for one profile is an explicit, informed choice.
+//   - global: requires sftp.allow_non_loopback=true; otherwise the caller
+//     refuses to start with an explanation.
+func resolveSFTPBind(cliBind string, profileOpts map[string]string) (addr string, allowRemote bool, origin sftpBindOrigin) {
+	if cliBind != "" {
+		return cliBind, !sftpproxy.IsLoopbackAddr(cliBind), bindOriginCLI
+	}
+	// Check the profile's own Options map directly — EffectiveOption would
+	// fall through to the global value and mislabel it as a profile choice.
+	if profileOpts != nil {
+		if v, ok := profileOpts["sftp.bind"]; ok && strings.TrimSpace(v) != "" {
+			return v, !sftpproxy.IsLoopbackAddr(v), bindOriginProfile
+		}
+	}
+	if cfg := internal.OpenConfig(internal.DefaultConfigPath()); cfg != nil {
+		if v := strings.TrimSpace(cfg.Get("sftp.bind")); v != "" {
+			nonLoop := !sftpproxy.IsLoopbackAddr(v)
+			allow := false
+			if nonLoop && cfg.LoadError() == nil {
+				av := strings.ToLower(strings.TrimSpace(cfg.Get("sftp.allow_non_loopback")))
+				allow = av == "true" || av == "1" || av == "yes"
+			}
+			return v, allow, bindOriginGlobal
+		}
+	}
+	return "127.0.0.1", false, bindOriginDefault
+}
+
+// warnNonLoopback prints a 2-second warning before proceeding with a
+// non-loopback bind from an explicit --bind flag.
+func warnNonLoopback(addr string) {
+	fmt.Fprintf(os.Stderr, "Warning: SFTP proxy binds to %s (non-loopback). The proxy accepts any password — the remote server's file system will be reachable from the network. Proceeding in 2s...\n", addr)
+	time.Sleep(2 * time.Second)
+}
+
 // SftpStart starts an SFTP proxy for the given profile.
-// Non-loopback bindAddr requires allowRemote (flag or sftp.allow_non_loopback).
-func SftpStart(name, bindAddr string, port int, allowRemote bool) {
+// cliBind is the raw --bind flag value (empty = resolve profile/global/default).
+func SftpStart(name, cliBind string, port int, deprecatedAllowRemote bool) {
+	if deprecatedAllowRemote {
+		fmt.Fprintln(os.Stderr, "Warning: --sftp-allow-remote is deprecated and no longer needed; non-loopback binds are authorized by --bind or per-profile sftp.bind.")
+	}
+
+	// Load the profile once; its Options drive the bind resolution unless a
+	// CLI --bind was passed explicitly (CLI wins over everything).
+	var profileOpts map[string]string
+	if cliBind == "" {
+		st, err := openStore()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, i18n.T("store.open_error")+"\n", err)
+			os.Exit(1)
+		}
+		p, exists := st.Get(name)
+		if !exists {
+			fmt.Fprintf(os.Stderr, i18n.T("profile.not_found")+"\n", name)
+			os.Exit(1)
+		}
+		profileOpts = p.Options
+	}
+	bindAddr, allowRemote, origin := resolveSFTPBind(cliBind, profileOpts)
+
+	// Origin-specific gate before validation.
+	switch origin {
+	case bindOriginCLI:
+		if allowRemote {
+			warnNonLoopback(bindAddr)
+		}
+	case bindOriginGlobal:
+		if allowRemote {
+			// authorized via sftp.allow_non_loopback=true
+		} else if !sftpproxy.IsLoopbackAddr(bindAddr) {
+			fmt.Fprintf(os.Stderr, "refusing to start: global sftp.bind=%s is non-loopback but sftp.allow_non_loopback is not true.\n", bindAddr)
+			fmt.Fprintln(os.Stderr, "If this profile should listen on a non-loopback address, set sftp.bind on the profile itself (per-profile choice authorizes it). Otherwise set sftp.allow_non_loopback=true to accept the risk globally.")
+			os.Exit(1)
+		}
+	}
+
 	if err := sftpproxy.ValidateBindAddr(bindAddr, allowRemote); err != nil {
 		fmt.Fprintf(os.Stderr, i18n.T("sftp.failed")+"\n", err)
 		os.Exit(1)
 	}
 
 	// If a daemon is already running, ask it to start SFTP proxy.
-	// Daemon path rejects non-loopback; only fork-based path honors allowRemote.
+	// The daemon trusts the AllowRemote decision sent in the mount request.
 	if daemonRunning(name) {
-		if allowRemote && bindAddr != "" && bindAddr != "127.0.0.1" && bindAddr != "::1" && bindAddr != "localhost" {
-			// Fall through to fork path so --sftp-allow-remote works with a live daemon.
-		} else {
-			port, fingerprint, daemonID, err := sftpViaDaemon(name, bindAddr, port)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, i18n.T("sftp.failed")+"\n", err)
-				os.Exit(1)
-			}
-			sftpURL := fmt.Sprintf("sftp://%s:%d", bindAddr, port)
-			fmt.Printf("SFTP proxy: %s\n", sftpURL)
-			if fingerprint != "" {
-				fmt.Fprintf(os.Stderr, "  SSH fingerprint: %s\n", fingerprint)
-			}
-			// Record the daemon's identity (not this client) so --sftp-stop can
-			// fall back to a safe PID kill when the daemon socket is unavailable.
-			if daemonID.PID == 0 {
-				daemonID = internal.CurrentIdentity()
-			}
-			sftpproxy.SaveState(name, port, bindAddr, daemonID, fingerprint)
-			return
+		port, fingerprint, daemonID, err := sftpViaDaemon(name, bindAddr, port, allowRemote)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, i18n.T("sftp.failed")+"\n", err)
+			os.Exit(1)
 		}
+		sftpURL := fmt.Sprintf("sftp://%s:%d", bindAddr, port)
+		fmt.Printf("SFTP proxy: %s\n", sftpURL)
+		if fingerprint != "" {
+			fmt.Fprintf(os.Stderr, "  SSH fingerprint: %s\n", fingerprint)
+		}
+		// Record the daemon's identity (not this client) so --sftp-stop can
+		// fall back to a safe PID kill when the daemon socket is unavailable.
+		if daemonID.PID == 0 {
+			daemonID = internal.CurrentIdentity()
+		}
+		sftpproxy.SaveState(name, port, bindAddr, daemonID, fingerprint)
+		return
 	}
 
-	// No daemon (or remote bind with allowRemote) — use the fork-based approach.
+	// No daemon — use the fork-based approach.
 	if err := sftpproxy.Start(name, bindAddr, port, allowRemote); err != nil {
 		fmt.Fprintf(os.Stderr, i18n.T("sftp.failed")+"\n", err)
 		os.Exit(1)

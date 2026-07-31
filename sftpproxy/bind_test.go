@@ -34,3 +34,18 @@ func TestValidateBindAddr_Empty(t *testing.T) {
 		t.Error("empty bind should be rejected")
 	}
 }
+
+func TestIsLoopbackAddr(t *testing.T) {
+	loop := []string{"127.0.0.1", "::1", "localhost", "127.0.0.1:22"}
+	non := []string{"0.0.0.0", "192.168.1.1", "10.0.0.5", "::", "", "  "}
+	for _, c := range loop {
+		if !IsLoopbackAddr(c) {
+			t.Errorf("IsLoopbackAddr(%q) = false, want true", c)
+		}
+	}
+	for _, c := range non {
+		if IsLoopbackAddr(c) {
+			t.Errorf("IsLoopbackAddr(%q) = true, want false", c)
+		}
+	}
+}

@@ -8,6 +8,7 @@ import (
 
 	"qssh/internal"
 	"qssh/internal/i18n"
+	"qssh/sftpproxy"
 )
 
 // Config handles --config get/set/unset operations.
@@ -169,6 +170,7 @@ func editConfigKey(c *internal.Config, key string, meta configKeyMeta) {
 		return
 	}
 	fmt.Printf(i18n.T("config.set")+"\n", key, val)
+	warnGlobalBindIfRisky(key, val)
 }
 
 func unsetConfigInteractive(c *internal.Config) {
@@ -302,6 +304,30 @@ func setConfig(key, value string) {
 		os.Exit(1)
 	}
 	fmt.Printf("%s = %s\n", key, value)
+	warnGlobalBindIfRisky(key, value)
+}
+
+// warnGlobalBindIfRisky prints a warning when a global sftp.bind is set to a
+// non-loopback address without sftp.allow_non_loopback=true. The setting is
+// allowed (not blocked), but qssh will refuse to start such a bind until the
+// allow flag is set.
+func warnGlobalBindIfRisky(key, value string) {
+	if key != "sftp.bind" {
+		return
+	}
+	if sftpproxy.IsLoopbackAddr(value) {
+		return
+	}
+	allow := false
+	if cfg := internal.OpenConfig(internal.DefaultConfigPath()); cfg != nil && cfg.LoadError() == nil {
+		v := strings.ToLower(strings.TrimSpace(cfg.Get("sftp.allow_non_loopback")))
+		allow = v == "true" || v == "1" || v == "yes"
+	}
+	fmt.Fprintln(os.Stderr, "Warning: global sftp.bind is non-loopback. qssh will refuse to start such binds unless sftp.allow_non_loopback=true.")
+	if !allow {
+		fmt.Fprintln(os.Stderr, "If you understand the risk, run: qssh --config set sftp.allow_non_loopback true")
+		fmt.Fprintln(os.Stderr, "Tip: set sftp.bind on a single profile instead (per-profile choice authorizes it): qssh --edit <profile> --set-option sftp.bind="+value)
+	}
 }
 
 // validateConfigValue rejects security-sensitive keys with unknown values

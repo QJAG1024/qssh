@@ -157,6 +157,18 @@ qssh --sftp-stop srv
 
 如果 daemon 正在运行，SFTP 代理会复用其 SSH 连接。
 
+**绑定授权。** 代理接受任意密码（真实认证在远端 SSH 连接），因此绑定地址是安全边界。三种非 loopback 绑定方式：
+
+| 来源 | 行为 |
+| ------ | ------ |
+| `--bind 0.0.0.0`（CLI） | 警告 2 秒后放行——你显式要求了 |
+| profile `sftp.bind=0.0.0.0` | 直接允许——per-profile 的选择本身就是授权 |
+| 全局 `sftp.bind=0.0.0.0` | 拒绝启动，除非同时设置 `sftp.allow_non_loopback=true` |
+
+设置非 loopback 的全局 `sftp.bind` 时配置阶段不拦截，但 `--sftp-start` 会拒绝启动直到 `sftp.allow_non_loopback=true`。
+
+`--sftp-allow-remote` **已弃用**（保留以兼容脚本）：非 loopback 绑定现在由 `--bind` 或 per-profile `sftp.bind` 授权。
+
 ---
 
 ## 守护进程（连接复用）

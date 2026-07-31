@@ -8,7 +8,7 @@
 | ---- | -------- | --------- | ------ |
 | `store.backend` | `file`, `keyring` | 自动探测 | 主密钥存储后端。`file` 使用 `~/.config/qssh/store.key`；`keyring` 使用 GNOME 密钥环（`secret-tool`）。已有 `store.key` 时优先 `file`。 |
 | `lang` | `en-US`, `zh-CN` | `en-US` | 界面语言。 |
-| `sftp.bind` | IP 地址 | `127.0.0.1` | `--sftp-start` 的默认绑定地址。 |
+| `sftp.bind` | IP 地址 | `127.0.0.1` | `--sftp-start` 的默认绑定地址。非 loopback 需要 `sftp.allow_non_loopback=true`（全局）——或者在 profile 上设置（per-profile 的选择本身就是授权，见「按 profile 覆盖」）。 |
 | `hostkey.mode` | `tofu`, `strict` | `tofu` | `tofu`: 首次使用时接受未知主机密钥（指纹记录到 `hostkey.log`）。`strict`: 拒绝未知主机。 |
 | `term.mode` | `passthrough`, `compat` | `passthrough` | `passthrough`: 将本地 `$TERM` 原样发送到远程 PTY。`compat`: 强制 `xterm`（适用于缺少 `ncurses-term` 的主机）。 |
 | `history.max_size` | 大小字符串 | `5M` | 历史文件最大大小。支持 `K`/`M`/`G` 后缀。超出时每次追加自动裁剪最旧条目。 |

@@ -51,9 +51,10 @@ type daemonReq struct {
 	Cmd       string   `json:"cmd,omitempty"`        // legacy shell command string for exec
 	Args      []string `json:"args,omitempty"`       // raw argv for exec (preferred; shell-quoted remotely)
 	Data      string   `json:"data,omitempty"`       // base64 stdin chunk
-	BindAddr  string   `json:"bind_addr,omitempty"`  // for mount
-	MountPort int      `json:"mount_port,omitempty"` // for mount (0 = random)
-	Force     bool     `json:"force,omitempty"`      // for stop: terminate even with active cmds/SFTP
+	BindAddr  string `json:"bind_addr,omitempty"`  // for mount
+	MountPort int    `json:"mount_port,omitempty"` // for mount (0 = random)
+	AllowRemote bool `json:"allow_remote,omitempty"` // for mount: client-authorized non-loopback bind
+	Force     bool   `json:"force,omitempty"`      // for stop: terminate even with active cmds/SFTP
 }
 
 type daemonResp struct {
@@ -669,11 +670,13 @@ func (d *daemon) handleMount(w *connWriter, req daemonReq) {
 	if bindAddr == "" {
 		bindAddr = "127.0.0.1"
 	}
-	// Loopback-only by default; daemon mount inherits the same safety
-	// boundary as standalone --sftp-start (no remote-listen override
-	// on the IPC path — clients must start SFTP outside the daemon
-	// with --sftp-allow-remote if they need a non-loopback bind).
-	if err := sftpproxy.ValidateBindAddr(bindAddr, false); err != nil {
+	// The client resolves the effective bind address (CLI --bind > profile
+	// sftp.bind > global sftp.bind > loopback) and authorizes non-loopback
+	// binds there, where the full context (profile Options + global config)
+	// is available. The daemon trusts the client's decision because the
+	// control socket is restricted to the owning user (0600 + SO_PEERCRED on
+	// Linux); its job here is only to validate the address format.
+	if err := sftpproxy.ValidateBindAddr(bindAddr, req.AllowRemote); err != nil {
 		_ = w.writeJSON(daemonResp{Type: "error", Msg: err.Error()})
 		return
 	}

@@ -93,7 +93,7 @@ func main() {
 	flag.BoolVar(&historyLast, "last", false, "Show only the last connection (use with --history)")
 	flag.StringVar(&sftpStartName, "sftp-start", "", "Start SFTP proxy for a profile (usage: qssh --sftp-start <name>)")
 	flag.StringVar(&sftpBind, "bind", "", "Bind address for SFTP proxy (default: 127.0.0.1)")
-	flag.BoolVar(&sftpAllowRemote, "sftp-allow-remote", false, "Allow SFTP proxy to bind non-loopback addresses (dangerous)")
+	flag.BoolVar(&sftpAllowRemote, "sftp-allow-remote", false, "DEPRECATED: non-loopback binds are now authorized by --bind or per-profile sftp.bind")
 	flag.StringVar(&sftpStopName, "sftp-stop", "", "Stop SFTP proxy for a profile (usage: qssh --sftp-stop <name>)")
 	flag.StringVar(&execName, "exec", "", "Run a command on a profile (usage: qssh --exec <profile> <command>)")
 	flag.StringVar(&daemonStart, "daemon-start", "", "Start background daemon for connection reuse")
@@ -206,23 +206,10 @@ func main() {
 		// Pass raw argv so spaces/quotes survive remote shell quoting.
 		cmd.Exec(execName, flag.Args())
 	case sftpStartName != "":
-		bindAddr := sftpBind
-		allowRemote := sftpAllowRemote
-		if cfg := internal.OpenConfig(internal.DefaultConfigPath()); cfg != nil {
-			if bindAddr == "" {
-				bindAddr = cfg.Get("sftp.bind")
-			}
-			// Only widen allowRemote from config when the file is healthy.
-			// A corrupt config must not silently enable remote listening.
-			if !allowRemote && cfg.LoadError() == nil {
-				v := strings.ToLower(strings.TrimSpace(cfg.Get("sftp.allow_non_loopback")))
-				allowRemote = v == "true" || v == "1" || v == "yes"
-			}
-		}
-		if bindAddr == "" {
-			bindAddr = "127.0.0.1"
-		}
-		cmd.SftpStart(sftpStartName, bindAddr, addPort, allowRemote)
+		// Resolution of the effective bind address (CLI --bind > profile
+		// sftp.bind > global sftp.bind > loopback) happens inside SftpStart,
+		// where the profile's Options are available.
+		cmd.SftpStart(sftpStartName, sftpBind, addPort, sftpAllowRemote)
 	case sftpStopName != "":
 		cmd.SftpStop(sftpStopName)
 	case doList || listJSON:

@@ -157,6 +157,22 @@ qssh --sftp-stop srv
 
 If a daemon is running, the SFTP proxy reuses its SSH connection.
 
+**Bind authorization.** The proxy accepts any password (real auth is the
+remote SSH connection), so the bind address is the security boundary. The
+three ways to bind non-loopback:
+
+| Source | Behavior |
+| -------- | ---------- |
+| `--bind 0.0.0.0` (CLI) | Warnings for 2s, then proceeds — you explicitly asked for it |
+| profile `sftp.bind=0.0.0.0` | Allowed — the per-profile choice is the authorization |
+| global `sftp.bind=0.0.0.0` | Refused unless `sftp.allow_non_loopback=true` is also set |
+
+Setting a non-loopback global `sftp.bind` is not blocked at config time, but
+`--sftp-start` will refuse to start it until `sftp.allow_non_loopback=true`.
+
+`--sftp-allow-remote` is **deprecated** (kept for script compatibility):
+non-loopback binds are now authorized by `--bind` or per-profile `sftp.bind`.
+
 ---
 
 ## Daemon (Connection Reuse)

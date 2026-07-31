@@ -6,6 +6,32 @@ import (
 	"strings"
 )
 
+// IsLoopbackAddr reports whether addr (with optional port) resolves only to
+// loopback addresses. Used to decide whether a bind requires authorization.
+func IsLoopbackAddr(addr string) bool {
+	host := addr
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
+	}
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return false
+	}
+	for _, ip := range ips {
+		if !ip.IsLoopback() {
+			return false
+		}
+	}
+	return true
+}
+
 // ValidateBindAddr rejects non-loopback bind addresses unless allowRemote
 // is true. Empty host is treated as unspecified (0.0.0.0) and rejected.
 // Hostnames that resolve only to loopback (e.g. "localhost") are allowed.
