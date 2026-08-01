@@ -324,3 +324,4 @@ func forkDaemon(profile string, mode string) error {
 	proc.Release() // don't wait for it
 	return nil
 }
+

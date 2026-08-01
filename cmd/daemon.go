@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/pkg/sftp"
@@ -135,6 +134,7 @@ type daemon struct {
 	idleTimeout   time.Duration
 	idleTimer     *time.Timer
 	stopKeepalive chan struct{}
+	ctlListener   net.Listener  // main control socket; closed by shutdown to break Accept
 	stopOnce      sync.Once
 }
 
@@ -207,6 +207,7 @@ func RunDaemon(profile string, modeStr string) {
 		sshClient:     session.Client(),
 		activeConns:   make(map[string]*connState),
 		stopKeepalive: make(chan struct{}),
+		ctlListener:   listener,
 	}
 	defer d.closeSSH()
 
@@ -229,6 +230,7 @@ func RunDaemon(profile string, modeStr string) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
+			// Listener closed (shutdown) or fatal — return so defers clean up.
 			return
 		}
 		if err := authorizePeer(conn); err != nil {
@@ -824,8 +826,11 @@ func (d *daemon) handleStop(w *connWriter, force bool) {
 
 	_ = w.writeJSON(daemonResp{Type: "stopped"})
 	// Drop SSH session immediately so residual clients cannot reuse it.
-	d.closeSSH()
+	// Order matters: shutdown() closes the control listener to break the
+	// main accept loop first; closeSSH runs after so a blocking SSH close
+	// cannot leave the process lingering after the socket is gone.
 	d.shutdown()
+	d.closeSSH()
 }
 
 func (d *daemon) stop() {
@@ -836,9 +841,22 @@ func (d *daemon) stop() {
 
 func (d *daemon) shutdown() {
 	d.stop()
-	// Send SIGTERM to self — the defer in RunDaemon cleans up.
-	process, _ := os.FindProcess(os.Getpid())
-	process.Signal(syscall.SIGTERM)
+	// Close the control listener to break the blocking Accept in RunDaemon;
+	// the loop returns and its defers clean up socket/pid files and the SSH
+	// session. No SIGTERM dependency: Go's default signal handling is
+	// unreliable for self-termination when goroutines hold locks.
+	if d.ctlListener != nil {
+		_ = d.ctlListener.Close()
+	}
+	if d.sftpListener != nil {
+		d.mu.Lock()
+		if d.sftpListener != nil {
+			_ = d.sftpListener.Close()
+			d.sftpListener = nil
+			d.sftpRunning = false
+		}
+		d.mu.Unlock()
+	}
 }
 
 // --- Socket helpers ---

@@ -95,30 +95,46 @@ func Dial(p store.Profile, progress internal.ProgressFn) (*Session, error) {
 		Timeout:         timeout,
 	}
 
-	// TCP + SSH handshake
+	// TCP + SSH handshake with a hard deadline covering authentication.
+	// ssh.ClientConfig.Timeout only bounds the TCP dial; the handshake and
+	// password/keyboard-interactive exchange can otherwise hang forever on an
+	// unresponsive peer. We dial manually and SetDeadline around NewClientConn.
 	progress(internal.StepResult{
 		ID: internal.StepTCPConnect, Status: internal.StepRunning,
 		Message: i18n.T("connecting", privacy.Addr(addr)),
 	})
 	connectStart := time.Now()
-	client, err := ssh.Dial("tcp", addr, config)
+
+	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
-		// Determine which step failed based on error type
-		if opErr, ok := err.(*net.OpError); ok {
-			progress(internal.StepResult{
-				ID: internal.StepTCPConnect, Status: internal.StepFailed,
-				Message: i18n.T("tcp_connect.failed", opErr.Err),
-				Hint:    i18n.T("tcp_connect.hint"),
-			})
-		} else {
-			progress(internal.StepResult{
-				ID: internal.StepAuthenticate, Status: internal.StepFailed,
-				Message: i18n.T("authenticate.failed", err),
-				Hint:    i18n.T("authenticate.hint", p.Name),
-			})
-		}
-		return nil, fmt.Errorf("ssh dial: %w", err)
+		progress(internal.StepResult{
+			ID: internal.StepTCPConnect, Status: internal.StepFailed,
+			Message: i18n.T("tcp_connect.failed", err),
+			Hint:    i18n.T("tcp_connect.hint"),
+		})
+		return nil, fmt.Errorf("tcp dial: %w", err)
 	}
+	// Cover the whole handshake (key exchange + auth) with the timeout; clear
+	// it once the connection is established so long-running sessions are not
+	// cut off by the connect deadline.
+	deadline := time.Now().Add(timeout)
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetDeadline(deadline)
+	}
+	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetDeadline(time.Time{})
+	}
+	if err != nil {
+		conn.Close()
+		progress(internal.StepResult{
+			ID: internal.StepAuthenticate, Status: internal.StepFailed,
+			Message: i18n.T("authenticate.failed", err),
+			Hint:    i18n.T("authenticate.hint", p.Name),
+		})
+		return nil, fmt.Errorf("ssh handshake: %w", err)
+	}
+	client := ssh.NewClient(sshConn, chans, reqs)
 	connectDone := time.Since(connectStart)
 	progress(internal.StepResult{
 		ID: internal.StepSSHHandshake, Status: internal.StepDone,
