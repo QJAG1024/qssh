@@ -58,6 +58,29 @@ qssh --copy myserver myserver-backup
 qssh --rename myserver new-server
 ```
 
+### `qssh --export` / `qssh --import`
+
+导出/导入 profile 为**口令加密**的 `.qssh` 文件（AES-256-GCM，PBKDF2 密钥派生）。包含密码、密钥口令等凭据；私钥文件存在时也会嵌入，跨机器导入可自动恢复。**profile 名不导出**——由导入方命名，因此不存在重名冲突。
+
+```bash
+# 交互式（询问口令 + 导出目录；默认当前目录）
+qssh --export myserver
+
+# 非交互式（口令从 stdin 读取）
+printf '口令\n' | qssh --export myserver --dir ~/backups
+
+# 交互式导入（询问口令 + profile 名）
+qssh --import ~/backups/myserver.qssh
+
+# 非交互式导入（口令从 stdin，指定名称）
+printf '口令\n' | qssh --import myserver.qssh --name myserver
+```
+
+注意：
+- 跳板（proxy）**不随导出**；导出时会打印警告。
+- 导入到已存在的 profile 名会被拒绝。
+- 若导出的密钥文件路径在导入机器上不存在，嵌入的私钥会恢复到 `~/.ssh/`，并自动更新 profile 的 `key_path`。
+
 ### `qssh --list`
 
 列出凭据。可选关键词过滤。`--json` 输出机器可读 JSON。

@@ -54,6 +54,16 @@ var usageGroups = []usageGroup{
 				usage: "qssh --delete <name>",
 				desc:  "usage.desc.delete",
 			},
+			{
+				usage: "qssh --export <name>",
+				desc:  "usage.desc.export",
+				subs:  "dir",
+			},
+			{
+				usage: "qssh --import <file>",
+				desc:  "usage.desc.import",
+				subs:  "name",
+			},
 		},
 	},
 	{

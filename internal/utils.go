@@ -19,6 +19,9 @@ var stdinReader = bufio.NewReader(os.Stdin)
 // isTerminal returns true if stdin is a terminal (not piped).
 var isTerminal = term.IsTerminal(int(os.Stdin.Fd()))
 
+// IsTerminalStdin reports whether stdin is a terminal (not piped).
+func IsTerminalStdin() bool { return isTerminal }
+
 // readLine reads a line from the shared stdin reader.
 func readLine() string {
 	line, _ := stdinReader.ReadString('\n')

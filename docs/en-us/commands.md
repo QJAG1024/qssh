@@ -57,6 +57,36 @@ qssh --copy myserver myserver-backup
 qssh --rename myserver new-server
 ```
 
+### `qssh --export` / `qssh --import`
+
+Export/import profiles as **passphrase-encrypted** `.qssh` files (AES-256-GCM,
+PBKDF2 key derivation). Secrets (password, key passphrase) are included;
+private key files are embedded when present so cross-machine imports can
+restore them. The profile **name is not exported** — the importer supplies it,
+so there are no name collisions.
+
+```bash
+# Interactive (asks for passphrase + output dir; default: current dir)
+qssh --export myserver
+
+# Non-interactive (passphrase read from stdin)
+printf 'passphrase\n' | qssh --export myserver --dir ~/backups
+
+# Interactive import (asks for passphrase + profile name)
+qssh --import ~/backups/myserver.qssh
+
+# Non-interactive import (passphrase from stdin, explicit name)
+printf 'passphrase\n' | qssh --import myserver.qssh --name myserver
+```
+
+Notes:
+
+- Proxy (jump host) is **not** exported; a warning is printed at export time.
+- Importing over an existing profile name is refused.
+- If the exported key file path does not exist on the importing machine, the
+  embedded key is restored to `~/.ssh/` and the profile's `key_path` is
+  updated accordingly.
+
 ### `qssh --list`
 
 List profiles. Optional substring filter. JSON output with `--json`.

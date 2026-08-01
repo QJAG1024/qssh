@@ -57,6 +57,10 @@ func main() {
 		sftpBind        string
 		sftpAllowRemote bool
 		sftpStopName    string
+		exportName      string
+		exportDir       string
+		importFile      string
+		importName      string
 		execName        string
 		daemonStart     string // --daemon-start
 		daemonStop      string // --daemon-stop
@@ -95,6 +99,10 @@ func main() {
 	flag.StringVar(&sftpBind, "bind", "", "Bind address for SFTP proxy (default: 127.0.0.1)")
 	flag.BoolVar(&sftpAllowRemote, "sftp-allow-remote", false, "DEPRECATED: non-loopback binds are now authorized by --bind or per-profile sftp.bind")
 	flag.StringVar(&sftpStopName, "sftp-stop", "", "Stop SFTP proxy for a profile (usage: qssh --sftp-stop <name>)")
+	flag.StringVar(&exportName, "export", "", "Export a profile to an encrypted .qssh file (usage: qssh --export <name>)")
+	flag.StringVar(&exportDir, "dir", "", "Output dir for --export (default: current dir; non-interactive mode reads passphrase from stdin)")
+	flag.StringVar(&importFile, "import", "", "Import a profile from an encrypted .qssh file (usage: qssh --import <file>)")
+	flag.StringVar(&importName, "name", "", "Profile name for --import (non-interactive mode reads passphrase from stdin)")
 	flag.StringVar(&execName, "exec", "", "Run a command on a profile (usage: qssh --exec <profile> <command>)")
 	flag.StringVar(&daemonStart, "daemon-start", "", "Start background daemon for connection reuse")
 	flag.StringVar(&daemonStop, "daemon-stop", "", "Stop a background daemon")
@@ -218,6 +226,10 @@ func main() {
 		cmd.SftpStart(sftpStartName, sftpBind, addPort, sftpAllowRemote)
 	case sftpStopName != "":
 		cmd.SftpStop(sftpStopName)
+	case exportName != "":
+		cmd.Export(exportName, exportDir)
+	case importFile != "":
+		cmd.Import(importFile, importName)
 	case doList || listJSON:
 		filter := ""
 		if flag.NArg() > 0 {
