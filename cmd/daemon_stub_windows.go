@@ -13,11 +13,14 @@ import (
 // --- Types (must exist for sftp_proxy.go references) ---
 
 type daemonReq struct {
-	Type      string `json:"type"`
-	Cmd       string `json:"cmd,omitempty"`
-	BindAddr  string `json:"bind_addr,omitempty"`
-	MountPort int    `json:"mount_port,omitempty"`
-	Force     bool   `json:"force,omitempty"`
+	Type        string   `json:"type"`
+	Cmd         string   `json:"cmd,omitempty"`
+	Args        []string `json:"args,omitempty"`
+	Data        string   `json:"data,omitempty"`
+	BindAddr    string   `json:"bind_addr,omitempty"`
+	MountPort   int      `json:"mount_port,omitempty"`
+	AllowRemote bool     `json:"allow_remote,omitempty"`
+	Force       bool     `json:"force,omitempty"`
 }
 
 type daemonResp struct {
