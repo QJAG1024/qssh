@@ -124,7 +124,7 @@ func main() {
 
 	// Warn when credentials are passed via argv: they are visible to any
 	// user via ps /proc/<pid>/cmdline while the process runs.
-	if addPassword != "" || addKeyPass != "" {
+	if argvCredsPresent(addPassword, addKeyPass) {
 		fmt.Fprintln(os.Stderr, i18n.T("cred.argv_warning"))
 	}
 
@@ -296,4 +296,11 @@ func parseTags(s string) []string {
 		}
 	}
 	return tags
+}
+
+// argvCredsPresent reports whether credentials were supplied via command-line
+// flags (visible to any user in the process list) rather than via an
+// interactive prompt or environment variable.
+func argvCredsPresent(password, keyPassphrase string) bool {
+	return password != "" || keyPassphrase != ""
 }

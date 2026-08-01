@@ -13,16 +13,16 @@ func TestShellQuote(t *testing.T) {
 		want string
 	}{
 		{"", "''"},
-		{"simple", "simple"},                       // safe chars pass through
-		{"./script.sh", "./script.sh"},             // path chars safe
-		{"has space", "'has space'"},               // space quoted
-		{"a'b", `'a'\''b'`},                        // embedded quote escaped
-		{"$(rm -rf /)", "'$(rm -rf /)'"},           // command substitution neutralized
-		{"`backtick`", "'`backtick`'"},             // backticks neutralized
-		{"; rm -rf /", "'; rm -rf /'"},             // semicolon neutralized
-		{"a\nb", "'a\nb'"},                         // newline inside single quotes
-		{"-n", "-n"},                               // dash ok
-		{"file:1,2", "file:1,2"},                   // colon/comma safe
+		{"simple", "simple"},             // safe chars pass through
+		{"./script.sh", "./script.sh"},   // path chars safe
+		{"has space", "'has space'"},     // space quoted
+		{"a'b", `'a'\''b'`},              // embedded quote escaped
+		{"$(rm -rf /)", "'$(rm -rf /)'"}, // command substitution neutralized
+		{"`backtick`", "'`backtick`'"},   // backticks neutralized
+		{"; rm -rf /", "'; rm -rf /'"},   // semicolon neutralized
+		{"a\nb", "'a\nb'"},               // newline inside single quotes
+		{"-n", "-n"},                     // dash ok
+		{"file:1,2", "file:1,2"},         // colon/comma safe
 	}
 	for _, c := range cases {
 		if got := shellQuote(c.in); got != c.want {
