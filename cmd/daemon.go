@@ -134,7 +134,7 @@ type daemon struct {
 	idleTimeout   time.Duration
 	idleTimer     *time.Timer
 	stopKeepalive chan struct{}
-	ctlListener   net.Listener  // main control socket; closed by shutdown to break Accept
+	ctlListener   net.Listener // main control socket; closed by shutdown to break Accept
 	stopOnce      sync.Once
 }
 
