@@ -47,17 +47,17 @@ type exportEnvelope struct {
 // content when the key file existed at export time (so cross-machine imports
 // can restore it); it is empty otherwise.
 type exportPayload struct {
-	Host            string            `json:"host"`
-	Port            int               `json:"port"`
-	User            string            `json:"user"`
-	Auth            AuthMethod        `json:"auth"`
-	Password        string            `json:"password,omitempty"`
-	KeyPath         string            `json:"key_path,omitempty"`
-	KeyPassphrase   string            `json:"key_passphrase,omitempty"`
-	KeyData         []byte            `json:"key_data,omitempty"` // raw key file, base64 in JSON
-	Options         map[string]string `json:"options,omitempty"`
-	Tags            []string          `json:"tags,omitempty"`
-	ProxyDropped    bool              `json:"proxy_dropped,omitempty"` // true if Proxy was non-empty at export
+	Host          string            `json:"host"`
+	Port          int               `json:"port"`
+	User          string            `json:"user"`
+	Auth          AuthMethod        `json:"auth"`
+	Password      string            `json:"password,omitempty"`
+	KeyPath       string            `json:"key_path,omitempty"`
+	KeyPassphrase string            `json:"key_passphrase,omitempty"`
+	KeyData       []byte            `json:"key_data,omitempty"` // raw key file, base64 in JSON
+	Options       map[string]string `json:"options,omitempty"`
+	Tags          []string          `json:"tags,omitempty"`
+	ProxyDropped  bool              `json:"proxy_dropped,omitempty"` // true if Proxy was non-empty at export
 }
 
 // IsExportFile reports whether data looks like a qssh export (magic+version).

@@ -7,13 +7,13 @@ import (
 
 func TestExportImportRoundtrip(t *testing.T) {
 	p := Profile{
-		Name:   "ignored", // name must NOT be part of the payload
-		Host:   "example.com",
-		Port:   2222,
-		User:   "alice",
-		Auth:   AuthPassword,
+		Name:     "ignored", // name must NOT be part of the payload
+		Host:     "example.com",
+		Port:     2222,
+		User:     "alice",
+		Auth:     AuthPassword,
 		Password: "s3cret",
-		Proxy:  "jump", // should be flagged as dropped
+		Proxy:    "jump", // should be flagged as dropped
 	}
 	data, err := ExportProfile(p, "hunter2", nil)
 	if err != nil {

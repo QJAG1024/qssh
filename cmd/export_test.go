@@ -11,7 +11,7 @@ func TestSanitizeHostToName(t *testing.T) {
 	}{
 		{"example.com", "example.com"},
 		{"10.0.0.5", "10.0.0.5"},
-		{"[::1]", "1"},        // brackets+colons collapse to single dash, trimmed
+		{"[::1]", "1"}, // brackets+colons collapse to single dash, trimmed
 		{"host:2222", "host-2222"},
 		{"a/b/c", "a-b-c"},
 		{"", "imported"},
