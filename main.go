@@ -122,6 +122,12 @@ func main() {
 		privacy.RevealOnce()
 	}
 
+	// Warn when credentials are passed via argv: they are visible to any
+	// user via ps /proc/<pid>/cmdline while the process runs.
+	if addPassword != "" || addKeyPass != "" {
+		fmt.Fprintln(os.Stderr, i18n.T("cred.argv_warning"))
+	}
+
 	optsMap := parseOptionsString(addOptionsStr)
 
 	switch {

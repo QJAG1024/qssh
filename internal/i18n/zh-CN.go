@@ -55,6 +55,7 @@ var zhCN = map[string]string{
 	"add.required_password":     "password auth 需要提供 --password",
 	"add.required_keypath":      "key auth 需要提供 --key-path",
 	"password.read_error":       "读取密码失败: %v",
+	"cred.argv_warning":        "警告：通过 --password/--key-passphrase 传入的凭据会在进程列表（ps）中可见。敏感值建议使用交互提示或 QSSH_PASSWORD 环境变量。",
 	"password.confirm_suffix":   "（确认）",
 	"password.mismatch":         "两次密码输入不一致",
 	"prompt.select":             "选择",

@@ -37,6 +37,9 @@ type sftpEntry struct {
 }
 
 func statePath() string {
+	if p := os.Getenv("QSSH_SFTP_STATE"); p != "" {
+		return p
+	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		configDir = filepath.Join(os.Getenv("HOME"), ".config")

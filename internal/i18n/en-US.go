@@ -55,6 +55,7 @@ var enUS = map[string]string{
 	"add.required_password":     "password is required for password auth",
 	"add.required_keypath":      "--key-path is required for key auth",
 	"password.read_error":       "Error reading password: %v",
+	"cred.argv_warning":        "Warning: credentials passed via --password/--key-passphrase are visible in the process list (ps). Prefer the interactive prompt or QSSH_PASSWORD env for sensitive values.",
 	"password.confirm_suffix":   "(confirm)",
 	"password.mismatch":         "passwords do not match",
 	"prompt.select":             "Select",
