@@ -3,6 +3,7 @@ package webdav
 import (
 	"bytes"
 	"encoding/xml"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -87,3 +88,59 @@ func (f fakeInfo) Mode() os.FileMode  { return 0644 }
 func (f fakeInfo) ModTime() time.Time { return f.mod }
 func (f fakeInfo) IsDir() bool        { return f.dir }
 func (f fakeInfo) Sys() interface{}   { return nil }
+
+func TestParseRange(t *testing.T) {
+	cases := []struct {
+		rng   string
+		size  int64
+		start int64
+		end   int64
+		ok    bool
+	}{
+		{"bytes=0-99", 1000, 0, 99, true},
+		{"bytes=100-", 1000, 100, 999, true},
+		{"bytes=500-599", 1000, 500, 599, true},
+		{"bytes=-100", 1000, 900, 999, true},
+		{"bytes=-100", 50, 0, 49, true}, // suffix larger than file
+		{"bytes=0-0", 1, 0, 0, true},
+		{"bytes=2000-", 1000, 0, 0, false}, // start beyond size
+		{"bytes=bad", 1000, 0, 0, false},
+		{"", 1000, 0, 0, false},
+		{"bytes=5-2", 1000, 0, 0, false}, // end < start
+	}
+	for _, c := range cases {
+		s, e, ok := parseRange(c.rng, c.size)
+		if ok != c.ok || (ok && (s != c.start || e != c.end)) {
+			t.Errorf("parseRange(%q, %d) = (%d,%d,%v), want (%d,%d,%v)",
+				c.rng, c.size, s, e, ok, c.start, c.end, c.ok)
+		}
+	}
+}
+
+func TestDestPath(t *testing.T) {
+	cases := []struct {
+		dest string
+		want string
+		ok   bool
+	}{
+		{"http://127.0.0.1:1234/tmp/foo", "/tmp/foo", true},
+		{"http://127.0.0.1:1234/", "/", true},
+		{"/tmp/foo", "/tmp/foo", true},
+		{"", "", false},
+	}
+	for _, c := range cases {
+		r := reqWithDest(c.dest)
+		got, ok := destPath(r)
+		if ok != c.ok || (ok && got != c.want) {
+			t.Errorf("destPath(%q) = (%q,%v), want (%q,%v)", c.dest, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func reqWithDest(dest string) *http.Request {
+	r, _ := http.NewRequest("MOVE", "/src", nil)
+	if dest != "" {
+		r.Header.Set("Destination", dest)
+	}
+	return r
+}
