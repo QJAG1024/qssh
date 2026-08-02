@@ -1,45 +1,44 @@
 #compdef qssh
 _qssh() {
   local -a profiles
-  profiles=(${(f)"$(_call_program profiles qssh --list --json 2>/dev/null | python3 -c 'import json,sys
-try:
-  data=json.load(sys.stdin)
-  for p in data: print(p.get("name",""))
-except Exception:
-  pass' 2>/dev/null)"})
-  if (( ${#profiles} == 0 )); then
-    profiles=(${(f)"$(_call_program profiles qssh --list 2>/dev/null | tail -n +3 | awk 'NF{print $1}')"})
-  fi
+  profiles=(${(f)"$(_call_program profiles qssh --list 2>/dev/null | tail -n +3 | awk "{print \$1}")"})
   _arguments \
-    "--add[Create a new profile]:name:" \
-    "--edit[Edit an existing profile]:name:(${profiles})" \
-    "--delete[Delete a profile]:name:(${profiles})" \
-    "--list[List profiles]:filter:()" \
-    "--json[JSON output (with --list)]" \
-    "--yes[Skip confirmation prompts]" \
-    "-y[Skip confirmation prompts]" \
-    "--exec[Execute a command]:name:(${profiles})" \
-    "--sftp-start[Start SFTP proxy]:name:(${profiles})" \
-    "--sftp-stop[Stop SFTP proxy]:name:(${profiles})" \
-    "--daemon-start[Start daemon]:name:(${profiles})" \
-    "--daemon-stop[Stop daemon]:name:(${profiles})" \
-    "--copy[Copy a profile]:name:(${profiles})" \
-    "--rename[Rename a profile]:name:(${profiles})" \
-    "--history[Show connection history]:name:(${profiles})" \
-    "--config[View or modify config]" \
+    "--add[Create a new profile]:name:(${profiles[@]})" \
+    "--auth[Auth method for --add (password/key/agent/keyboard-interactive)]:value:" \
+    "--bind[Bind address for SFTP proxy (default: 127.0.0.1)]:value:" \
+    "--config[View or modify config (usage: qssh --config [get|set <key> <value>])]" \
+    "--copy[Copy a profile (usage: qssh --copy <old-name> <new-name>)]:name:(${profiles[@]})" \
+    "--daemon-start[Start background daemon for connection reuse]:name:(${profiles[@]})" \
+    "--daemon-stop[Stop a background daemon]:name:(${profiles[@]})" \
+    "--delete[Delete a profile]:name:(${profiles[@]})" \
+    "--dir[Output dir for --export (default: current dir; non-interactive mode reads passphrase from stdin)]:value:" \
+    "--edit[Edit an existing profile]:name:(${profiles[@]})" \
+    "--exec[Run a command on a profile (usage: qssh --exec <profile> <command>)]:name:(${profiles[@]})" \
+    "--export[Export a profile to an encrypted .qssh file (usage: qssh --export <name>)]:name:(${profiles[@]})" \
+    "--history[Show connection history for a profile]:name:(${profiles[@]})" \
+    "--host[Host for --add]:value:" \
+    "--import[Import a profile from an encrypted .qssh file (usage: qssh --import <file>)]:value:" \
+    "--json[Machine-readable JSON output (use with --list)]" \
+    "--key-passphrase[Passphrase for encrypted private key (--add/--edit)]:value:" \
+    "--key-path[Key path for --add (used with --auth key)]:value:" \
+    "--last[Show only the last connection (use with --history)]" \
+    "--list[List profiles (optional: qssh --list filter)]" \
+    "--name[Profile name for --import (non-interactive mode reads passphrase from stdin)]:value:" \
+    "--password[Password for --add]:value:" \
+    "--port[Port for --add]:value:" \
+    "--proxy[Proxy profile name for --add or --edit]:name:(${profiles[@]})" \
+    "--rename[Rename a profile (usage: qssh --rename <old-name> <new-name>)]:name:(${profiles[@]})" \
+    "--reveal[Show hosts/IPs for this process only (does not change sticky privacy)]" \
+    "--set-option[Options for --add (comma-separated KEY=VALUE pairs, e.g. ConnectTimeout=30s,SetEnv=LANG=en_US.UTF-8)]:value:" \
+    "--sftp-allow-remote[DEPRECATED: non-loopback binds are now authorized by --bind or per-profile sftp.bind]" \
+    "--sftp-start[Start SFTP proxy for a profile (usage: qssh --sftp-start <name>)]:name:(${profiles[@]})" \
+    "--sftp-stop[Stop SFTP proxy for a profile (usage: qssh --sftp-stop <name>)]:name:(${profiles[@]})" \
+    "--tags[Comma-separated tags for --add or --edit]:value:" \
+    "--user[User for --add]:value:" \
     "--version[Print version]" \
-    "--host[Host]:host:" \
-    "--port[Port]:port:" \
-    "--user[User]:user:" \
-    "--auth[Auth method]:auth:(password key agent keyboard-interactive)" \
-    "--password[Password]:password:" \
-    "--key-path[Key path]:path:_files" \
-    "--key-passphrase[Key passphrase]:passphrase:" \
-    "--proxy[Proxy profile]:name:(${profiles})" \
-    "--set-option[Options KEY=VALUE]:options:" \
-    "--tags[Comma-separated tags]:tags:" \
-    "--bind[SFTP bind address]:addr:" \
-    "--last[Show only last connection]" \
+    "--webdav-start[Start WebDAV server for a profile (usage: qssh --webdav-start <name>)]:name:(${profiles[@]})" \
+    "--webdav-stop[Stop WebDAV server for a profile]:name:(${profiles[@]})" \
+    "--yes[Skip confirmation prompts (agent-friendly)]" \
     "*: :->profile"
   case $state in
     profile)

@@ -15,20 +15,13 @@ except Exception:
   fi
 
   case $prev in
-    --edit|--delete|--exec|--sftp-start|--sftp-stop|--daemon-start|--daemon-stop|--history|--proxy)
+    --add|--copy|--daemon-start|--daemon-stop|--delete|--edit|--exec|--export|--history|--proxy|--rename|--sftp-start|--sftp-stop|--webdav-start|--webdav-stop)
       COMPREPLY=($(compgen -W "$profiles" -- "$cur"))
-      return ;;
-    --copy|--rename)
-      COMPREPLY=($(compgen -W "$profiles" -- "$cur"))
-      return ;;
-    --host|--user|--auth|--password|--key-path|--key-passphrase|--set-option|--bind|--tags|--port)
-      return ;;
-    --add|--list)
       return ;;
   esac
 
   if [[ $cur == -* ]]; then
-    COMPREPLY=($(compgen -W '--add --edit --delete --list --json --yes -y --exec --sftp-start --sftp-stop --daemon-start --daemon-stop --copy --rename --history --config --version --host --port --user --auth --password --key-path --key-passphrase --proxy --set-option --tags --bind --last' -- "$cur"))
+    COMPREPLY=($(compgen -W '--add --auth --bind --config --copy --daemon-start --daemon-stop --delete --dir --edit --exec --export --history --host --import --json --key-passphrase --key-path --last --list --name --password --port --proxy --rename --reveal --set-option --sftp-allow-remote --sftp-start --sftp-stop --tags --user --version --webdav-start --webdav-stop -y --yes' -- "$cur"))
   else
     COMPREPLY=($(compgen -W "$profiles" -- "$cur"))
   fi
