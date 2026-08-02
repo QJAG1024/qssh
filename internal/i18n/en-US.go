@@ -228,6 +228,14 @@ var enUS = map[string]string{
 	"edit.confirm.save":         "Save changes?",
 	"edit.confirm.discard":      "Discard all changes?",
 	"edit.error.options":        "options: %v",
+	"options.panel.title":   "Per-profile options",
+	"options.panel.set":     "s) set a key",
+	"options.panel.unset":   "u) unset a key",
+	"options.panel.back":    "q) back",
+	"options.panel.key":     "Key",
+	"options.panel.value":   "Value",
+	"options.panel.unset_which": "Unset which key?",
+	"options.error.unknown": "unknown per-profile option %q",
 
 	// Daemon
 	"daemon.already_running": "daemon is already running",

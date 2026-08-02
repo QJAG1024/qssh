@@ -376,3 +376,29 @@ func unsetConfig(key string) {
 	}
 	fmt.Printf(i18n.T("config.unset")+"\n", key)
 }
+
+// perProfileKeysMeta returns metadata for the keys that can be overridden
+// per-profile (the --set-option whitelist). Reuses configKnownKeys metadata
+// where available; adds the two option-only keys.
+func perProfileKeysMeta() map[string]configKeyMeta {
+	known := configKnownKeys()
+	meta := make(map[string]configKeyMeta)
+	for k := range internal.PerProfileOptionKeys() {
+		if m, ok := known[k]; ok {
+			meta[k] = m
+		} else {
+			meta[k] = configKeyMeta{key: k}
+		}
+	}
+	return meta
+}
+
+// perProfileKeysSorted returns the per-profile keys in sorted order.
+func perProfileKeysSorted() []string {
+	keys := make([]string, 0, len(internal.PerProfileOptionKeys()))
+	for k := range internal.PerProfileOptionKeys() {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}

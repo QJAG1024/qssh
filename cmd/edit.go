@@ -172,20 +172,8 @@ func editInteractive(s *store.Store, p *store.Profile) {
 				p.Proxy = proxy
 			}
 		case 4: // Options
-			optStr := internal.Prompt(i18n.T("edit.prompt.options"), optionString(p.Options))
-			if optStr == "" && len(p.Options) > 0 {
-				if internal.Confirm(i18n.T("edit.confirm.remove_opts"), false) {
-					p.Options = nil
-				}
-			} else if optStr != "" {
-				parsed := parseOptionString(optStr)
-				var err error
-				p.Options, err = internal.ApplyOptionMap(p.Options, parsed)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, i18n.T("edit.error.options")+"\n", err)
-					os.Exit(1)
-				}
-			}
+			// Interactive per-key panel for profile options.
+			editPerProfileOptions(p)
 		case 5: // Tags
 			tagsStr := internal.Prompt(i18n.T("edit.prompt.tags"), strings.Join(p.Tags, ", "))
 			if tagsStr != "" {
@@ -298,4 +286,105 @@ func parseOptionString(s string) map[string]string {
 		}
 	}
 	return m
+}
+
+// editPerProfileOptions is an interactive panel for setting per-profile
+// option keys (the --set-option whitelist). Replaces the raw comma-string
+// Options editing with per-key selection. Writes p.Options directly.
+func editPerProfileOptions(p *store.Profile) {
+	meta := perProfileKeysMeta()
+	keys := perProfileKeysSorted()
+
+	for {
+		fmt.Println()
+		fmt.Println(strings.Repeat("─", 50))
+		fmt.Println("  " + i18n.T("options.panel.title"))
+		fmt.Println(strings.Repeat("─", 50))
+		for i, k := range keys {
+			val := p.Options[k]
+			display := val
+			if display == "" {
+				display = i18n.T("config.panel.not_set")
+			}
+			desc := ""
+			if m, ok := meta[k]; ok && m.desc != "" {
+				desc = "  ← " + i18n.T(m.desc)
+			}
+			fmt.Printf("  %2d) %-25s = %s%s\n", i+1, k, display, desc)
+		}
+		fmt.Println(strings.Repeat("─", 50))
+		fmt.Println("  " + i18n.T("options.panel.set"))
+		fmt.Println("  " + i18n.T("options.panel.unset"))
+		fmt.Println("  " + i18n.T("options.panel.back"))
+		fmt.Println()
+
+		choice := internal.Prompt(i18n.T("config.panel.action"), "q")
+		switch strings.ToLower(choice) {
+		case "q", "":
+			return
+		case "s":
+			setPerProfileKey(p, meta, keys)
+		case "u":
+			unsetPerProfileKey(p, meta, keys)
+		default:
+			// Numeric: jump to a key and edit it.
+			n, err := strconv.Atoi(choice)
+			if err == nil && n >= 1 && n <= len(keys) {
+				setPerProfileKey(p, meta, keys, keys[n-1])
+			}
+		}
+	}
+}
+
+// setPerProfileKey prompts for a key's value (SelectPrompt when the key has
+// fixed options) and applies it to p.Options. An empty value clears the
+// override. When keyHint is non-empty it targets that key directly.
+func setPerProfileKey(p *store.Profile, meta map[string]configKeyMeta, keys []string, keyHint ...string) {
+	var key string
+	if len(keyHint) > 0 && keyHint[0] != "" {
+		key = keyHint[0]
+	} else {
+		key = internal.Prompt(i18n.T("options.panel.key"), "")
+		if key == "" {
+			return
+		}
+	}
+	m, ok := meta[key]
+	if !ok {
+		fmt.Fprintf(os.Stderr, i18n.T("options.error.unknown")+"\n", key)
+		return
+	}
+
+	current := p.Options[key]
+	var val string
+	if len(m.options) > 0 {
+		val = internal.SelectPrompt(i18n.T("options.panel.value")+":", m.options, current)
+	} else {
+		val = internal.Prompt(i18n.T("options.panel.value"), current)
+	}
+
+	if val == "" {
+		// Empty clears the override.
+		delete(p.Options, key)
+		return
+	}
+	applied, err := internal.ApplyOptionMap(p.Options, map[string]string{key: val})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, i18n.T("edit.error.options")+"\n", err)
+		return
+	}
+	p.Options = applied
+}
+
+// unsetPerProfileKey clears a key's override.
+func unsetPerProfileKey(p *store.Profile, meta map[string]configKeyMeta, keys []string) {
+	key := internal.Prompt(i18n.T("options.panel.unset_which"), "")
+	if key == "" {
+		return
+	}
+	if _, ok := meta[key]; !ok {
+		fmt.Fprintf(os.Stderr, i18n.T("options.error.unknown")+"\n", key)
+		return
+	}
+	delete(p.Options, key)
 }

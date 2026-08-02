@@ -228,6 +228,14 @@ var zhCN = map[string]string{
 	"edit.confirm.save":         "保存更改？",
 	"edit.confirm.discard":      "放弃所有更改？",
 	"edit.error.options":        "选项: %v",
+	"options.panel.title":   "按 profile 选项",
+	"options.panel.set":     "s) 设置一个键",
+	"options.panel.unset":   "u) 清除一个键",
+	"options.panel.back":    "q) 返回",
+	"options.panel.key":     "键",
+	"options.panel.value":   "值",
+	"options.panel.unset_which": "清除哪个键？",
+	"options.error.unknown": "未知的 per-profile 选项 %q",
 
 	// 守护进程
 	"daemon.already_running": "daemon 已在运行",

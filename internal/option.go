@@ -23,6 +23,16 @@ func EffectiveOption(profileOpts map[string]string, key string) string {
 
 // Per-profile option keys accepted by --set-option / interactive Options edit.
 // These are the only keys that may be stored in a profile's Options map.
+// PerProfileOptionKeys returns the set of keys that may be overridden
+// per-profile (the --set-option whitelist).
+func PerProfileOptionKeys() map[string]string {
+	out := make(map[string]string, len(perProfileOptionKeys))
+	for k, v := range perProfileOptionKeys {
+		out[k] = v
+	}
+	return out
+}
+
 var perProfileOptionKeys = map[string]string{
 	"ConnectTimeout":          "Connection timeout (e.g. 30s)",
 	"SetEnv":                  "Environment variables, comma-separated KEY=VALUE",
