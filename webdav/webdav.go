@@ -22,12 +22,19 @@ import (
 // Server serves an SFTP-backed WebDAV endpoint over HTTP.
 type Server struct {
 	client *sftp.Client
+	token  string // bearer token; empty = no auth (loopback default)
 	mu     sync.Mutex
 }
 
 // New creates a WebDAV server wrapping the SFTP client.
 func New(client *sftp.Client) *Server {
 	return &Server{client: client}
+}
+
+// SetToken requires a bearer token (X-QSSH-Token header or ?token= query)
+// for every request. Without it the server is open (loopback-only default).
+func (s *Server) SetToken(token string) {
+	s.token = token
 }
 
 // --- WebDAV XML types (minimal RFC 4918) ---
@@ -68,6 +75,17 @@ const (
 
 // ServeHTTP routes WebDAV methods.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Token auth: header X-QSSH-Token or ?token= query param.
+	if s.token != "" {
+		got := r.Header.Get("X-QSSH-Token")
+		if got == "" {
+			got = r.URL.Query().Get("token")
+		}
+		if got != s.token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+	}
 	// Normalize path: WebDAV URLs are rooted at /, mapping to SFTP paths.
 	p := r.URL.Path
 	if !strings.HasPrefix(p, "/") {
@@ -363,11 +381,40 @@ func (s *Server) handleMove(w http.ResponseWriter, r *http.Request, src string) 
 		http.Error(w, "missing Destination", http.StatusBadRequest)
 		return
 	}
-	if err := s.client.Rename(src, dest); err != nil {
-		http.Error(w, "rename failed", http.StatusConflict)
+	if err := s.client.Rename(src, dest); err == nil {
+		w.WriteHeader(http.StatusCreated)
+		return
+	} else if isCrossDevice(err) {
+		// Cross-filesystem move: SFTP Rename fails with EXDEV; fall back to
+		// copy + delete (works across devices).
+		if err := s.copyRecursive(src, dest); err != nil {
+			http.Error(w, "move failed (copy): "+err.Error(), http.StatusConflict)
+			return
+		}
+		if err := s.client.RemoveAll(src); err != nil {
+			http.Error(w, "move failed (cleanup src): "+err.Error(), http.StatusConflict)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		return
+	} else {
+		http.Error(w, "rename failed: "+err.Error(), http.StatusConflict)
 		return
 	}
-	w.WriteHeader(http.StatusCreated)
+}
+
+// isCrossDevice reports whether an SFTP error is a cross-filesystem rename
+// failure (server-specific messages vary).
+func isCrossDevice(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "cross-device") ||
+		strings.Contains(msg, "invalid cross-device") ||
+		strings.Contains(msg, "exdev") ||
+		strings.Contains(msg, "different filesystem") ||
+		strings.Contains(msg, "not on same")
 }
 
 // handleCopy copies src to dest recursively via SFTP (no server-side COPY in

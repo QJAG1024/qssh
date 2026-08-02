@@ -73,6 +73,8 @@ var zhCN = map[string]string{
 	"webdav.stop_failed": "WebDAV 停止失败: %v",
 	"webdav.stopped":     "WebDAV 服务器已停止",
 	"webdav.url":        "WebDAV:",
+	"webdav.token_hint": "注意：服务器需要上述令牌（X-QSSH-Token 头或 ?token= 查询参数）。",
+	"webdav.mount_hint": "挂载：macOS Finder / Windows 资源管理器 / Linux 文件管理器 → 连接上述 dav:// 或 http:// 地址",
 	"webdav.daemon_failed": "WebDAV 守护进程失败: %s",
 	"webdav.timeout":       "WebDAV 守护进程未在预期时间内就绪",
 	"password.confirm_suffix":   "（确认）",

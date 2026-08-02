@@ -31,8 +31,20 @@ func WebdavStart(name, bindAddr string, port int, allowRemote bool) {
 	// Print both protocol forms: dav:// (gio/davfs2/Linux, KDE) and http://
 	// (Finder "Connect to Server", Windows Map Network Drive).
 	fmt.Println(i18n.T("webdav.url"))
-	fmt.Printf("  dav://%s\n", strings.TrimPrefix(url, "http://"))
-	fmt.Printf("  %s\n", url)
+	if strings.Contains(url, "?token=") {
+		// Token-auth URL: keep the token in the query for HTTP clients; for
+		// dav:// clients the token goes in the URL as user:token@.
+		base := strings.SplitN(url, "?", 2)[0]
+		token := strings.TrimPrefix(strings.SplitN(url, "?", 2)[1], "token=")
+		hostport := strings.TrimSuffix(strings.TrimPrefix(base, "http://"), "/")
+		fmt.Printf("  dav://qssh:%s@%s/\n", token, hostport)
+		fmt.Printf("  %s\n", url)
+		fmt.Fprintln(os.Stderr, i18n.T("webdav.token_hint"))
+	} else {
+		fmt.Printf("  dav://%s\n", strings.TrimPrefix(url, "http://"))
+		fmt.Printf("  %s\n", url)
+	}
+	fmt.Fprintln(os.Stderr, i18n.T("webdav.mount_hint"))
 }
 
 // WebdavStop stops the WebDAV server for the profile.

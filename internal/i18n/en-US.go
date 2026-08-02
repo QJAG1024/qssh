@@ -73,6 +73,8 @@ var enUS = map[string]string{
 	"webdav.stop_failed": "WebDAV stop failed: %v",
 	"webdav.stopped":     "WebDAV server stopped",
 	"webdav.url":        "WebDAV:",
+	"webdav.token_hint": "Note: server requires the token above (X-QSSH-Token header or ?token= query).",
+	"webdav.mount_hint": "Mount: macOS Finder / Windows Explorer / Linux file manager → connect to the dav:// or http:// URL above",
 	"webdav.daemon_failed": "webdav daemon failed: %s",
 	"webdav.timeout":       "webdav daemon did not become ready in time",
 	"password.confirm_suffix":   "(confirm)",

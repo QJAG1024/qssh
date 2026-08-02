@@ -5,8 +5,10 @@
 package webdav
 
 import (
-	"errors"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -34,6 +36,7 @@ type entry struct {
 	StartTime uint64 `json:"start_time,omitempty"`
 	Exe       string `json:"exe,omitempty"`
 	URL       string `json:"url"`
+	Token     string `json:"token,omitempty"` // bearer token; "" = no auth
 	Status    string `json:"status"` // "starting", "ready", "failed"
 	Message   string `json:"message,omitempty"`
 }
@@ -90,8 +93,11 @@ func saveState(m map[string]entry) {
 // Start forks a WebDAV daemon for the profile. bindAddr must be loopback
 // unless allowRemote is true. port 0 picks a random port.
 func Start(name, bindAddr string, port int, allowRemote bool) (string, error) {
-	if err := sftpproxy.ValidateBindAddr(bindAddr, allowRemote); err != nil {
-		return "", err
+	// WebDAV's own auth (token on non-loopback) replaces the SFTP proxy's
+	// allow_non_loopback gate: binding non-loopback is fine because every
+	// request then requires a token. Only refuse truly unspecified binds.
+	if bindAddr == "" {
+		return "", fmt.Errorf("bind address must be specified")
 	}
 	st := loadState()
 	if existing, exists := st[name]; exists && existing.Status != "failed" {
@@ -136,6 +142,10 @@ func Start(name, bindAddr string, port int, allowRemote bool) (string, error) {
 		e := loadState()[name]
 		switch e.Status {
 		case "ready":
+			// Return the URL the daemon recorded (it carries the token).
+			if e.URL != "" {
+				return e.URL, nil
+			}
 			return url, nil
 		case "failed":
 			return "", fmt.Errorf(i18n.T("webdav.daemon_failed"), e.Message)
@@ -218,11 +228,27 @@ func Daemon(profileName, portStr, bindAddr string, allowRemote bool) {
 		os.Exit(1)
 	}
 
+	// Token auth for non-loopback safety; loopback keeps no-auth (same
+	// trust model as the SFTP proxy). The token is embedded in the URL and
+	// must be sent via X-QSSH-Token header or ?token= query.
+	token := ""
+	if !sftpproxy.IsLoopbackAddr(bindAddr) {
+		token = randomToken()
+	}
+
 	srv := New(sfClient)
+	if token != "" {
+		srv.SetToken(token)
+	}
 	go http.Serve(ln, srv)
 
 	url := fmt.Sprintf("http://%s:%d/", bindAddr, port)
-	markReady(profileName, port, url, internal.CurrentIdentity())
+	if token != "" {
+		// Include token so clients that support URL auth (gio dav://user:pass@)
+		// or the ?token= query work out of the box.
+		url = fmt.Sprintf("http://%s:%d/?token=%s", bindAddr, port, token)
+	}
+	markReady(profileName, port, url, token, internal.CurrentIdentity())
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -233,9 +259,9 @@ func Daemon(profileName, portStr, bindAddr string, allowRemote bool) {
 
 // --- state helpers ---
 
-func markReady(name string, port int, url string, id internal.ProcessIdentity) {
+func markReady(name string, port int, url string, token string, id internal.ProcessIdentity) {
 	st := loadState()
-	st[name] = entry{Port: port, PID: id.PID, StartTime: id.StartTime, Exe: id.Exe, URL: url, Status: "ready"}
+	st[name] = entry{Port: port, PID: id.PID, StartTime: id.StartTime, Exe: id.Exe, URL: url, Token: token, Status: "ready"}
 	saveState(st)
 }
 
@@ -264,4 +290,14 @@ var openStoreFn func() (*store.Store, error)
 // SetOpenStore provides the store opener from the cmd package.
 func SetOpenStore(fn func() (*store.Store, error)) {
 	openStoreFn = fn
+}
+
+
+// randomToken returns a 16-byte hex token for WebDAV auth.
+func randomToken() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(buf)
 }

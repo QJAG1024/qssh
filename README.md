@@ -76,13 +76,43 @@ go build -o qssh .
 
 特别适合 AI agent、脚本、自动化场景——只需调用 `--exec`，其余由工具管理。
 
-### 远程文件访问（SFTP 代理）
+### 远程文件访问
 
-启动本地 SFTP 透明代理，任何 SFTP 客户端均可连接使用。
+两种方式，按客户端选择：
+
+**SFTP 代理**（FileZilla / cyberduck 等专业 SFTP 客户端）
 
 ```bash
 ./qssh --sftp-start myserver
+# → SFTP proxy: sftp://127.0.0.1:33125
 ./qssh --sftp-stop myserver
+```
+
+**WebDAV 挂载**（系统文件管理器原生挂载：macOS Finder、Windows 资源管理器、Linux gvfs/KDE）
+
+```bash
+./qssh --webdav-start myserver
+# → WebDAV:
+#     dav://127.0.0.1:34123/
+#     http://127.0.0.1:34123/
+./qssh --webdav-stop myserver
+```
+
+挂载方式（按系统）：
+- **macOS**：Finder → 前往 → 连接服务器 → 输入 `http://127.0.0.1:端口/`
+- **Windows**：资源管理器 → 映射网络驱动器 → 输入 `http://127.0.0.1:端口/`
+- **Linux**：文件管理器地址栏输入 `dav://127.0.0.1:端口/`（或 `gio mount`）
+
+非 loopback 绑定（`--bind 0.0.0.0` 等）时自动启用 token 认证，输出带凭据的 URL。
+
+### 凭据导入导出
+
+把 profile（含密码/密钥）导出为口令加密的 `.qssh` 文件，跨机器迁移。
+
+```bash
+./qssh --export myserver              # 交互：询问口令 + 目录
+printf '口令\n' | ./qssh --export myserver --dir ~/backups
+./qssh --import myserver.qssh --name myserver
 ```
 
 ### 守护进程（后台连接复用）
@@ -98,6 +128,9 @@ go build -o qssh .
 - **隐私模式**：默认对 UI 输出中主机/IP 脱敏，可通过 `--reveal` 临时查看
 - **Agent 友好**：`--yes` 跳过确认、`--list --json` 机器可读输出、`--exec` 支持 stdin 管道
 - **主机密钥**：TOFU（首次使用时接受）并记录指纹审计日志
+- **Per-profile 选项**：`--set-option` 按 profile 覆盖全局配置（term.mode / hostkey.mode / sftp.bind 等）
+- **命令历史记录**：`--exec` 命令默认只记命令名（`history.record_commands` 可调 full/masked/off）
+- **补全**：`make completions` 生成 bash/zsh/fish 补全（从 main.go flag 自动同步）
 
 ## 完整文档
 

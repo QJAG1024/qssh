@@ -74,13 +74,46 @@ The first call auto-starts a managed daemon for connection reuse. Subsequent cal
 
 Built for AI agents and scripts — just call `--exec`, the rest is handled for you.
 
-### Remote File Access (SFTP Proxy)
+### Remote File Access
 
-A local transparent SFTP proxy. Any SFTP client can connect.
+Two options, pick by client:
+
+**SFTP proxy** (FileZilla / cyberduck and other SFTP clients)
 
 ```bash
 ./qssh --sftp-start myserver
+# → SFTP proxy: sftp://127.0.0.1:33125
 ./qssh --sftp-stop myserver
+```
+
+**WebDAV mount** (native mounting in file managers: macOS Finder, Windows
+Explorer, Linux gvfs/KDE)
+
+```bash
+./qssh --webdav-start myserver
+# → WebDAV:
+#     dav://127.0.0.1:34123/
+#     http://127.0.0.1:34123/
+./qssh --webdav-stop myserver
+```
+
+Mount (per OS):
+- **macOS**: Finder → Go → Connect to Server → enter `http://127.0.0.1:port/`
+- **Windows**: Explorer → Map network drive → enter `http://127.0.0.1:port/`
+- **Linux**: file manager address bar `dav://127.0.0.1:port/` (or `gio mount`)
+
+Non-loopback binds (`--bind 0.0.0.0` etc.) enable token auth automatically;
+the printed URL carries the credential.
+
+### Profile Export / Import
+
+Export profiles (passwords/keys included) to passphrase-encrypted `.qssh`
+files for cross-machine migration.
+
+```bash
+./qssh --export myserver              # interactive: passphrase + dir
+printf 'passphrase\n' | ./qssh --export myserver --dir ~/backups
+./qssh --import myserver.qssh --name myserver
 ```
 
 ### Daemon (Connection Reuse)
@@ -96,6 +129,12 @@ A local transparent SFTP proxy. Any SFTP client can connect.
 - **Privacy mode**: host/IP addresses are redacted in UI output by default; use `--reveal` to show them temporarily
 - **Agent-friendly**: `--yes` to skip prompts, `--list --json` for machine-readable output, `--exec` with stdin piping
 - **Host keys**: TOFU (accept on first use) with fingerprint audit log
+- **Per-profile options**: `--set-option` overrides global config per profile
+  (term.mode / hostkey.mode / sftp.bind etc.)
+- **Command history**: `--exec` commands default to name-only recording
+  (`history.record_commands`: full/masked/off)
+- **Completions**: `make completions` generates bash/zsh/fish (auto-synced
+  from main.go flags)
 
 ## Full Documentation
 
