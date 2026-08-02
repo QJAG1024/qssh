@@ -192,6 +192,34 @@ qssh --sftp-stop srv
 
 `--sftp-allow-remote` **已弃用**（保留以兼容脚本）：非 loopback 绑定现在由 `--bind` 或 per-profile `sftp.bind` 授权。
 
+## WebDAV 挂载
+
+基于 SFTP 的 WebDAV 服务器，可在系统文件管理器中原生挂载远程文件系统
+（macOS Finder、Windows 资源管理器、Linux gvfs/KDE）。为高延迟链路优化：
+PROPFIND 用一次 ReadDir 构建响应（无逐条目往返——见
+[webdav-design.md](webdav-design.md)）。
+
+```bash
+# 启动
+qssh --webdav-start srv
+# → WebDAV:
+#     dav://127.0.0.1:34123/
+#     http://127.0.0.1:34123/
+
+# 停止
+qssh --webdav-stop srv
+```
+
+各系统挂载方式：
+- **macOS**：Finder → 前往 → 连接服务器 → `http://127.0.0.1:<端口>/`
+- **Windows**：资源管理器 → 映射网络驱动器 → `http://127.0.0.1:<端口>/`
+- **Linux**：文件管理器地址栏 `dav://127.0.0.1:<端口>/`（或 `gio mount`）
+
+**令牌认证。** loopback 绑定默认开放（与 SFTP 代理同款信任模型）。非 loopback
+绑定（`--bind 0.0.0.0` 或 per-profile `webdav.bind`）会生成随机令牌，请求需
+携带 `X-QSSH-Token` 头或 `?token=` 查询参数；输出的 URL 已附带。
+`webdav.token_mode=always`（全局或 per-profile）即使 loopback 也要求令牌。
+
 ---
 
 ## 守护进程（连接复用）
