@@ -1,3 +1,5 @@
+//go:build !windows
+
 package webdav
 
 import (
@@ -193,7 +195,6 @@ func TestWebDAV_StateFile(t *testing.T) {
 	}
 	_ = json.Valid
 }
-
 
 // urlFor returns the server URL for an absolute tempdir path.
 func urlFor(ts *httptest.Server, abs string) string {
