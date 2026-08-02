@@ -153,3 +153,7 @@ All commands, config keys, and architecture details: [docs](docs/en-us/README.md
 - [golang.org/x/crypto](https://pkg.go.dev/golang.org/x/crypto) — SSH protocol + host key verification
 - [golang.org/x/term](https://pkg.go.dev/golang.org/x/term) — terminal raw mode
 - [github.com/pkg/sftp](https://github.com/pkg/sftp) — SFTP client & proxy
+
+## License
+
+[MIT](LICENSE)

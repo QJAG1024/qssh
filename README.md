@@ -149,3 +149,7 @@ printf '口令\n' | ./qssh --export myserver --dir ~/backups
 - [golang.org/x/crypto](https://pkg.go.dev/golang.org/x/crypto) — SSH 协议 + 主机密钥验证
 - [golang.org/x/term](https://pkg.go.dev/golang.org/x/term) — 终端 raw mode
 - [github.com/pkg/sftp](https://github.com/pkg/sftp) — SFTP 客户端及代理
+
+## 许可证
+
+[MIT](LICENSE)
