@@ -304,7 +304,10 @@ func (s *Server) handlePut(w http.ResponseWriter, r *http.Request, p string) {
 		return
 	}
 	defer f.Close()
-	if _, err := io.Copy(f, r.Body); err != nil {
+	// ReadFromWithConcurrency is essential on high-latency links: plain
+	// io.Copy falls back to sequential Write (one ACK round-trip per packet),
+	// making uploads ~30x slower than downloads. Force concurrent writes.
+	if _, err := f.ReadFromWithConcurrency(r.Body, 16); err != nil {
 		http.Error(w, "write error", http.StatusInternalServerError)
 		return
 	}
@@ -398,7 +401,7 @@ func (s *Server) copyRecursive(src, dest string) error {
 			return err
 		}
 		defer out.Close()
-		if _, err := io.Copy(out, in); err != nil {
+		if _, err := out.ReadFromWithConcurrency(in, 16); err != nil {
 			return err
 		}
 		return nil
@@ -429,8 +432,8 @@ func isExistsErr(err error) bool {
 // --- LOCK / UNLOCK (no-op locks: always succeed, nothing held) ---
 
 type lockDiscovery struct {
-	XMLName      xml.Name `xml:"D:prop"`
-	LockDiscovery *string `xml:"D:lockdiscovery,omitempty"`
+	XMLName       xml.Name `xml:"D:prop"`
+	LockDiscovery *string  `xml:"D:lockdiscovery,omitempty"`
 }
 
 func (s *Server) handleLock(w http.ResponseWriter, r *http.Request, p string) {

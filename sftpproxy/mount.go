@@ -262,7 +262,14 @@ func SftpDaemon(profileName, portStr, bindAddr string, allowRemote bool) {
 	defer session.Close()
 
 	setProgress(profileName, i18n.T("sftp.starting"))
-	sfClient, err := sftp.NewClient(session.Client())
+	// Concurrent writes/reads for high-latency links (uploads otherwise
+	// serialize on per-packet ACKs).
+	sfClient, err := sftp.NewClient(session.Client(),
+		sftp.UseConcurrentWrites(true),
+		sftp.UseConcurrentReads(true),
+		sftp.MaxConcurrentRequestsPerFile(8),
+		sftp.MaxPacket(32*1024),
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[sftp-daemon] SFTP: %v\n", err)
 		setFailed(profileName)

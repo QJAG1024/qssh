@@ -195,7 +195,15 @@ func Daemon(profileName, portStr, bindAddr string, allowRemote bool) {
 	}
 	defer session.Close()
 
-	sfClient, err := sftp.NewClient(session.Client())
+	// Concurrent writes are essential on high-latency links: without them
+	// each SFTP write packet waits for an ACK (~200ms per round-trip), making
+	// uploads orders of magnitude slower than downloads.
+	sfClient, err := sftp.NewClient(session.Client(),
+		sftp.UseConcurrentWrites(true),
+		sftp.UseConcurrentReads(true),
+		sftp.MaxConcurrentRequestsPerFile(8),
+		sftp.MaxPacket(32*1024),
+	)
 	if err != nil {
 		setFailed(profileName, "sftp: "+err.Error())
 		os.Exit(1)
