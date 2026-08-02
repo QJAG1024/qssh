@@ -71,3 +71,17 @@ func History(profile string, lastOnly bool) {
 	}
 	w.Flush()
 }
+
+// HistoryClear removes the entire connection history.
+func HistoryClear() {
+	existed, err := internal.ClearHistory()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, i18n.T("history.clear_error")+"\n", err)
+		os.Exit(1)
+	}
+	if !existed {
+		fmt.Println(i18n.T("history.empty_all"))
+		return
+	}
+	fmt.Println(i18n.T("history.cleared"))
+}

@@ -21,7 +21,7 @@ except Exception:
   esac
 
   if [[ $cur == -* ]]; then
-    COMPREPLY=($(compgen -W '--add --auth --bind --config --copy --daemon-start --daemon-stop --delete --dir --edit --exec --export --history --host --import --json --key-passphrase --key-path --last --list --name --password --port --proxy --rename --reveal --set-option --sftp --sftp-allow-remote --sftp-start --sftp-stop --tags --user --version --webdav --webdav-start --webdav-stop -y --yes' -- "$cur"))
+    COMPREPLY=($(compgen -W '--add --auth --bind --config --copy --daemon-start --daemon-stop --delete --dir --edit --exec --export --history --history-clear --host --import --json --key-passphrase --key-path --last --list --name --password --port --proxy --readonly --rename --reveal --set-option --sftp --sftp-allow-remote --sftp-start --sftp-stop --tags --user --version --webdav --webdav-start --webdav-stop -y --yes' -- "$cur"))
   else
     COMPREPLY=($(compgen -W "$profiles" -- "$cur"))
   fi

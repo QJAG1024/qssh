@@ -199,3 +199,32 @@ func TestWebDAV_StateFile(t *testing.T) {
 func urlFor(ts *httptest.Server, abs string) string {
 	return ts.URL + abs
 }
+
+func TestWebDAV_Readonly(t *testing.T) {
+	srv, root := newTestServer(t)
+	srv.SetReadonly(true)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// GET still works.
+	resp, _ := http.Get(urlFor(ts, filepath.Join(root, "hello.txt")))
+	if resp.StatusCode != 200 {
+		t.Errorf("readonly GET = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// PUT rejected.
+	req, _ := http.NewRequest("PUT", urlFor(ts, filepath.Join(root, "nope.txt")), strings.NewReader("x"))
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != 403 {
+		t.Errorf("readonly PUT = %d, want 403", resp2.StatusCode)
+	}
+	// File not created.
+	if _, err := os.Stat(filepath.Join(root, "nope.txt")); err == nil {
+		t.Error("readonly PUT should not create file")
+	}
+}

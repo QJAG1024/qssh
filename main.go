@@ -53,6 +53,7 @@ func main() {
 		renameOld       string
 		historyProfile  string
 		historyLast     bool
+		historyClear    bool
 		sftpStartName   string
 		sftpBind        string
 		sftpAllowRemote bool
@@ -75,6 +76,7 @@ func main() {
 		daemonPort      string // --port (internal)
 		daemonBind      string // --bind-addr (internal)
 		daemonTokenMode string // --token-mode (internal)
+		webdavReadonly  bool   // --readonly (--webdav-start)
 		doConfig        bool
 		doList          bool
 		listJSON        bool
@@ -101,6 +103,7 @@ func main() {
 	flag.StringVar(&renameOld, "rename", "", "Rename a profile (usage: qssh --rename <old-name> <new-name>)")
 	flag.StringVar(&historyProfile, "history", "", "Show connection history for a profile")
 	flag.BoolVar(&historyLast, "last", false, "Show only the last connection (use with --history)")
+	flag.BoolVar(&historyClear, "history-clear", false, "Clear all connection history")
 	flag.StringVar(&sftpStartName, "sftp-start", "", "Start SFTP proxy for a profile (usage: qssh --sftp-start <name>)")
 	flag.StringVar(&sftpBind, "bind", "", "Bind address for SFTP proxy (default: 127.0.0.1)")
 	flag.BoolVar(&sftpAllowRemote, "sftp-allow-remote", false, "DEPRECATED: non-loopback binds are now authorized by --bind or per-profile sftp.bind")
@@ -123,6 +126,7 @@ func main() {
 	flag.StringVar(&daemonPort, "daemon-port", "", "Internal: port")
 	flag.StringVar(&daemonBind, "bind-addr", "", "Internal: bind address")
 	flag.StringVar(&daemonTokenMode, "token-mode", "", "Internal: WebDAV token mode")
+	flag.BoolVar(&webdavReadonly, "readonly", false, "Mount WebDAV read-only (rejects write methods)")
 	flag.BoolVar(&doConfig, "config", false, "View or modify config (usage: qssh --config [get|set <key> <value>])")
 	flag.BoolVar(&doList, "list", false, "List profiles (optional: qssh --list filter)")
 	flag.BoolVar(&listJSON, "json", false, "Machine-readable JSON output (use with --list)")
@@ -177,7 +181,7 @@ func main() {
 	case sftpDaemon != "":
 		cmd.SftpDaemon(sftpDaemon, daemonPort, daemonBind, sftpAllowRemote)
 	case webdavDaemon != "":
-		cmd.WebdavDaemon(webdavDaemon, daemonPort, daemonBind, sftpAllowRemote, daemonTokenMode)
+		cmd.WebdavDaemon(webdavDaemon, daemonPort, daemonBind, sftpAllowRemote, daemonTokenMode, webdavReadonly)
 	case doConfig:
 		cmd.Config(flag.Args())
 	case addName != "":
@@ -224,6 +228,8 @@ func main() {
 			os.Exit(1)
 		}
 		cmd.Rename(renameOld, newName)
+	case historyClear:
+		cmd.HistoryClear()
 	case historyProfile != "" || historyLast:
 		cmd.History(historyProfile, historyLast)
 	case execName != "":
@@ -255,7 +261,7 @@ func main() {
 		}
 		cmd.SftpStatus(profile)
 	case webdavStartName != "":
-		cmd.WebdavStart(webdavStartName, sftpBind, addPort, sftpAllowRemote)
+		cmd.WebdavStart(webdavStartName, sftpBind, addPort, sftpAllowRemote, webdavReadonly)
 	case webdavStopName != "":
 		cmd.WebdavStop(webdavStopName)
 	case exportName != "":

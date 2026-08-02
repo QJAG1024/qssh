@@ -302,3 +302,12 @@ func splitLines(s string) []string {
 	}
 	return lines
 }
+
+// ClearHistory removes the history file entirely. Returns true if it existed.
+func ClearHistory() (bool, error) {
+	err := os.Remove(HistoryPath())
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return err == nil, err
+}

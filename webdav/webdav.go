@@ -21,9 +21,10 @@ import (
 
 // Server serves an SFTP-backed WebDAV endpoint over HTTP.
 type Server struct {
-	client *sftp.Client
-	token  string // bearer token; empty = no auth (loopback default)
-	mu     sync.Mutex
+	client   *sftp.Client
+	token    string // bearer token; empty = no auth (loopback default)
+	readonly bool
+	mu       sync.Mutex
 }
 
 // New creates a WebDAV server wrapping the SFTP client.
@@ -35,6 +36,12 @@ func New(client *sftp.Client) *Server {
 // for every request. Without it the server is open (loopback-only default).
 func (s *Server) SetToken(token string) {
 	s.token = token
+}
+
+// SetReadonly makes the server read-only: PUT/MKCOL/DELETE/MOVE/COPY are
+// rejected with 403.
+func (s *Server) SetReadonly(ro bool) {
+	s.readonly = ro
 }
 
 // --- WebDAV XML types (minimal RFC 4918) ---
@@ -98,14 +105,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET", "HEAD":
 		s.handleGet(w, r, p)
 	case "PUT":
+		if s.readonly {
+			http.Error(w, "read-only", http.StatusForbidden)
+			return
+		}
 		s.handlePut(w, r, p)
 	case "MKCOL":
+		if s.readonly {
+			http.Error(w, "read-only", http.StatusForbidden)
+			return
+		}
 		s.handleMkcol(w, r, p)
 	case "DELETE":
+		if s.readonly {
+			http.Error(w, "read-only", http.StatusForbidden)
+			return
+		}
 		s.handleDelete(w, r, p)
 	case "MOVE":
+		if s.readonly {
+			http.Error(w, "read-only", http.StatusForbidden)
+			return
+		}
 		s.handleMove(w, r, p)
 	case "COPY":
+		if s.readonly {
+			http.Error(w, "read-only", http.StatusForbidden)
+			return
+		}
 		s.handleCopy(w, r, p)
 	case "LOCK":
 		s.handleLock(w, r, p)

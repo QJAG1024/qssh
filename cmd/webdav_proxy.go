@@ -20,7 +20,7 @@ func init() {
 // Effective bind address: CLI --bind > profile webdav.bind > global
 // webdav.bind > 127.0.0.1. Token mode: profile/global webdav.token_mode
 // (auto|always), default auto.
-func WebdavStart(name, cliBind string, port int, allowRemote bool) {
+func WebdavStart(name, cliBind string, port int, allowRemote bool, readonly bool) {
 	// Load the profile for per-profile webdav.bind / webdav.token_mode.
 	var profileOpts map[string]string
 	if cliBind == "" {
@@ -54,7 +54,7 @@ func WebdavStart(name, cliBind string, port int, allowRemote bool) {
 		fmt.Fprintln(os.Stderr, i18n.T("webdav.warn_remote"))
 	}
 
-	url, err := webdav.Start(name, bindAddr, port, allowRemote, tokenMode)
+	url, err := webdav.Start(name, bindAddr, port, allowRemote, tokenMode, readonly)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, i18n.T("webdav.failed")+"\n", err)
 		os.Exit(1)
@@ -76,6 +76,9 @@ func WebdavStart(name, cliBind string, port int, allowRemote bool) {
 		fmt.Printf("  %s\n", url)
 	}
 	fmt.Fprintln(os.Stderr, i18n.T("webdav.mount_hint"))
+	if readonly {
+		fmt.Fprintln(os.Stderr, i18n.T("webdav.readonly_hint"))
+	}
 }
 
 // isLoopback reports whether a bind address resolves only to loopback.
@@ -93,8 +96,8 @@ func WebdavStop(name string) {
 }
 
 // WebdavDaemon is the hidden entry point for the WebDAV worker.
-func WebdavDaemon(name, port, bindAddr string, allowRemote bool, tokenMode string) {
-	webdav.Daemon(name, port, bindAddr, allowRemote, tokenMode)
+func WebdavDaemon(name, port, bindAddr string, allowRemote bool, tokenMode string, readonly bool) {
+	webdav.Daemon(name, port, bindAddr, allowRemote, tokenMode, readonly)
 }
 
 // WebdavStatus shows WebDAV mount status. name empty = all profiles.

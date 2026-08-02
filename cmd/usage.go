@@ -119,6 +119,10 @@ var usageGroups = []usageGroup{
 				subs:  "last",
 			},
 			{
+				usage: "qssh --history-clear",
+				desc:  "usage.desc.history_clear",
+			},
+			{
 				usage: "qssh --daemon-start <name>",
 				desc:  "usage.desc.daemon_start",
 			},

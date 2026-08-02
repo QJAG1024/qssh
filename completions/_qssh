@@ -16,6 +16,7 @@ _qssh() {
     "--exec[Run a command on a profile (usage: qssh --exec <profile> <command>)]:name:(${profiles[@]})" \
     "--export[Export a profile to an encrypted .qssh file (usage: qssh --export <name>)]:name:(${profiles[@]})" \
     "--history[Show connection history for a profile]:name:(${profiles[@]})" \
+    "--history-clear[Clear all connection history]" \
     "--host[Host for --add]:value:" \
     "--import[Import a profile from an encrypted .qssh file (usage: qssh --import <file>)]:value:" \
     "--json[Machine-readable JSON output (use with --list)]" \
@@ -27,6 +28,7 @@ _qssh() {
     "--password[Password for --add]:value:" \
     "--port[Port for --add]:value:" \
     "--proxy[Proxy profile name for --add or --edit]:name:(${profiles[@]})" \
+    "--readonly[Mount WebDAV read-only (rejects write methods)]" \
     "--rename[Rename a profile (usage: qssh --rename <old-name> <new-name>)]:name:(${profiles[@]})" \
     "--reveal[Show hosts/IPs for this process only (does not change sticky privacy)]" \
     "--set-option[Options for --add (comma-separated KEY=VALUE pairs, e.g. ConnectTimeout=30s,SetEnv=LANG=en_US.UTF-8)]:value:" \

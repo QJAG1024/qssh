@@ -27,6 +27,7 @@ complete -c qssh -l edit -d "Edit an existing profile" -r -a "(__qssh_profiles)"
 complete -c qssh -l exec -d "Run a command on a profile (usage: qssh --exec <profile> <command>)" -r -a "(__qssh_profiles)"
 complete -c qssh -l export -d "Export a profile to an encrypted .qssh file (usage: qssh --export <name>)" -r -a "(__qssh_profiles)"
 complete -c qssh -l history -d "Show connection history for a profile" -r -a "(__qssh_profiles)"
+complete -c qssh -l history-clear -d "Clear all connection history"
 complete -c qssh -l host -d "Host for --add" -r
 complete -c qssh -l import -d "Import a profile from an encrypted .qssh file (usage: qssh --import <file>)" -r
 complete -c qssh -l json -d "Machine-readable JSON output (use with --list)"
@@ -38,6 +39,7 @@ complete -c qssh -l name -d "Profile name for --import (non-interactive mode rea
 complete -c qssh -l password -d "Password for --add" -r
 complete -c qssh -l port -d "Port for --add" -r
 complete -c qssh -l proxy -d "Proxy profile name for --add or --edit" -r -a "(__qssh_profiles)"
+complete -c qssh -l readonly -d "Mount WebDAV read-only (rejects write methods)"
 complete -c qssh -l rename -d "Rename a profile (usage: qssh --rename <old-name> <new-name>)" -r -a "(__qssh_profiles)"
 complete -c qssh -l reveal -d "Show hosts/IPs for this process only (does not change sticky privacy)"
 complete -c qssh -l set-option -d "Options for --add (comma-separated KEY=VALUE pairs, e.g. ConnectTimeout=30s,SetEnv=LANG=en_US.UTF-8)" -r
