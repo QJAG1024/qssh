@@ -438,3 +438,16 @@ var openStoreFn func() (*store.Store, error) = nil
 func SetOpenStore(fn func() (*store.Store, error)) {
 	openStoreFn = fn
 }
+
+// Status returns the running SFTP proxy entries. When name is non-empty,
+// returns just that profile (nil if not running).
+func Status(name string) map[string]sftpEntry {
+	all := loadState()
+	if name == "" {
+		return all
+	}
+	if e, ok := all[name]; ok {
+		return map[string]sftpEntry{name: e}
+	}
+	return nil
+}

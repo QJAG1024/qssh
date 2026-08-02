@@ -87,6 +87,10 @@ var usageGroups = []usageGroup{
 				desc:  "usage.desc.sftp_stop",
 			},
 			{
+				usage: "qssh --sftp [profile]",
+				desc:  "usage.desc.sftp_status",
+			},
+			{
 				usage: "qssh --webdav-start <name>",
 				desc:  "usage.desc.webdav_start",
 				subs:  "bind port",
@@ -94,6 +98,10 @@ var usageGroups = []usageGroup{
 			{
 				usage: "qssh --webdav-stop <name>",
 				desc:  "usage.desc.webdav_stop",
+			},
+			{
+				usage: "qssh --webdav [profile]",
+				desc:  "usage.desc.webdav_status",
 			},
 		},
 	},

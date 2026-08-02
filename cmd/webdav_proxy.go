@@ -96,3 +96,30 @@ func WebdavStop(name string) {
 func WebdavDaemon(name, port, bindAddr string, allowRemote bool, tokenMode string) {
 	webdav.Daemon(name, port, bindAddr, allowRemote, tokenMode)
 }
+
+// WebdavStatus shows WebDAV mount status. name empty = all profiles.
+func WebdavStatus(name string) {
+	st := webdav.Status(name)
+	if len(st) == 0 {
+		if name != "" {
+			fmt.Printf(i18n.T("webdav.not_running")+"\n", name)
+		} else {
+			fmt.Println(i18n.T("webdav.none_running"))
+		}
+		return
+	}
+	fmt.Println(i18n.T("webdav.url"))
+	for n, e := range st {
+		if name == "" {
+			fmt.Printf("  %-20s ", n)
+		}
+		switch e.Status {
+		case "ready":
+			fmt.Printf("%s (pid %d)\n", e.URL, e.PID)
+		case "starting":
+			fmt.Printf("%s (starting)\n", e.URL)
+		default:
+			fmt.Printf("failed: %s\n", e.Message)
+		}
+	}
+}

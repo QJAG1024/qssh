@@ -41,12 +41,14 @@ complete -c qssh -l proxy -d "Proxy profile name for --add or --edit" -r -a "(__
 complete -c qssh -l rename -d "Rename a profile (usage: qssh --rename <old-name> <new-name>)" -r -a "(__qssh_profiles)"
 complete -c qssh -l reveal -d "Show hosts/IPs for this process only (does not change sticky privacy)"
 complete -c qssh -l set-option -d "Options for --add (comma-separated KEY=VALUE pairs, e.g. ConnectTimeout=30s,SetEnv=LANG=en_US.UTF-8)" -r
+complete -c qssh -l sftp -d "Show SFTP proxy status (usage: qssh --sftp [profile])"
 complete -c qssh -l sftp-allow-remote -d "DEPRECATED: non-loopback binds are now authorized by --bind or per-profile sftp.bind"
 complete -c qssh -l sftp-start -d "Start SFTP proxy for a profile (usage: qssh --sftp-start <name>)" -r -a "(__qssh_profiles)"
 complete -c qssh -l sftp-stop -d "Stop SFTP proxy for a profile (usage: qssh --sftp-stop <name>)" -r -a "(__qssh_profiles)"
 complete -c qssh -l tags -d "Comma-separated tags for --add or --edit" -r
 complete -c qssh -l user -d "User for --add" -r
 complete -c qssh -l version -d "Print version"
+complete -c qssh -l webdav -d "Show WebDAV mount status (usage: qssh --webdav [profile])"
 complete -c qssh -l webdav-start -d "Start WebDAV server for a profile (usage: qssh --webdav-start <name>)" -r -a "(__qssh_profiles)"
 complete -c qssh -l webdav-stop -d "Stop WebDAV server for a profile" -r -a "(__qssh_profiles)"
 complete -c qssh -s y -d "Short for --yes"

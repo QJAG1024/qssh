@@ -305,3 +305,16 @@ func randomToken() string {
 	}
 	return hex.EncodeToString(buf)
 }
+
+// Status returns the running WebDAV entries. When name is non-empty, returns
+// just that profile (nil if not running).
+func Status(name string) map[string]entry {
+	all := loadState()
+	if name == "" {
+		return all
+	}
+	if e, ok := all[name]; ok {
+		return map[string]entry{name: e}
+	}
+	return nil
+}

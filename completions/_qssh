@@ -30,12 +30,14 @@ _qssh() {
     "--rename[Rename a profile (usage: qssh --rename <old-name> <new-name>)]:name:(${profiles[@]})" \
     "--reveal[Show hosts/IPs for this process only (does not change sticky privacy)]" \
     "--set-option[Options for --add (comma-separated KEY=VALUE pairs, e.g. ConnectTimeout=30s,SetEnv=LANG=en_US.UTF-8)]:value:" \
+    "--sftp[Show SFTP proxy status (usage: qssh --sftp [profile])]" \
     "--sftp-allow-remote[DEPRECATED: non-loopback binds are now authorized by --bind or per-profile sftp.bind]" \
     "--sftp-start[Start SFTP proxy for a profile (usage: qssh --sftp-start <name>)]:name:(${profiles[@]})" \
     "--sftp-stop[Stop SFTP proxy for a profile (usage: qssh --sftp-stop <name>)]:name:(${profiles[@]})" \
     "--tags[Comma-separated tags for --add or --edit]:value:" \
     "--user[User for --add]:value:" \
     "--version[Print version]" \
+    "--webdav[Show WebDAV mount status (usage: qssh --webdav [profile])]" \
     "--webdav-start[Start WebDAV server for a profile (usage: qssh --webdav-start <name>)]:name:(${profiles[@]})" \
     "--webdav-stop[Stop WebDAV server for a profile]:name:(${profiles[@]})" \
     "--yes[Skip confirmation prompts (agent-friendly)]" \

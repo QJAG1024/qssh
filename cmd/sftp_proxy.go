@@ -184,3 +184,31 @@ func SftpStop(name string) {
 		Message: i18n.T("sftp.stopped"),
 	})
 }
+
+// SftpStatus shows SFTP proxy status. name empty = all profiles.
+func SftpStatus(name string) {
+	st := sftpproxy.Status(name)
+	if len(st) == 0 {
+		if name != "" {
+			fmt.Printf(i18n.T("sftp.not_running")+"\n", name)
+		} else {
+			fmt.Println(i18n.T("sftp.none_running"))
+		}
+		return
+	}
+	for n, e := range st {
+		line := ""
+		if name == "" {
+			line = fmt.Sprintf("  %-20s ", n)
+		}
+		switch e.Status {
+		case "ready":
+			line += fmt.Sprintf("SFTP proxy: %s (pid %d)", e.URL, e.PID)
+		case "starting":
+			line += fmt.Sprintf("SFTP proxy: %s (starting)", e.URL)
+		default:
+			line += fmt.Sprintf("failed: %s", e.Message)
+		}
+		fmt.Println(line)
+	}
+}

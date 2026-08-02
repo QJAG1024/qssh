@@ -59,6 +59,8 @@ func main() {
 		sftpStopName    string
 		webdavStartName string
 		webdavStopName  string
+		webdavStatus    bool // --webdav (optional profile as arg)
+		sftpStatus      bool // --sftp (optional profile as arg)
 		webdavDaemon    string // --webdav-daemon (internal)
 		exportName      string
 		exportDir       string
@@ -106,6 +108,8 @@ func main() {
 	flag.StringVar(&webdavStartName, "webdav-start", "", "Start WebDAV server for a profile (usage: qssh --webdav-start <name>)")
 	flag.StringVar(&webdavStopName, "webdav-stop", "", "Stop WebDAV server for a profile")
 	flag.StringVar(&webdavDaemon, "webdav-daemon", "", "Internal: WebDAV worker (profile name)")
+	flag.BoolVar(&webdavStatus, "webdav", false, "Show WebDAV mount status (usage: qssh --webdav [profile])")
+	flag.BoolVar(&sftpStatus, "sftp", false, "Show SFTP proxy status (usage: qssh --sftp [profile])")
 	flag.StringVar(&exportName, "export", "", "Export a profile to an encrypted .qssh file (usage: qssh --export <name>)")
 	flag.StringVar(&exportDir, "dir", "", "Output dir for --export (default: current dir; non-interactive mode reads passphrase from stdin)")
 	flag.StringVar(&importFile, "import", "", "Import a profile from an encrypted .qssh file (usage: qssh --import <file>)")
@@ -236,6 +240,20 @@ func main() {
 		cmd.SftpStart(sftpStartName, sftpBind, addPort, sftpAllowRemote)
 	case sftpStopName != "":
 		cmd.SftpStop(sftpStopName)
+	case webdavStatus:
+		// qssh --webdav [profile]
+		profile := ""
+		if flag.NArg() >= 1 {
+			profile = flag.Arg(0)
+		}
+		cmd.WebdavStatus(profile)
+	case sftpStatus:
+		// qssh --sftp [profile]
+		profile := ""
+		if flag.NArg() >= 1 {
+			profile = flag.Arg(0)
+		}
+		cmd.SftpStatus(profile)
 	case webdavStartName != "":
 		cmd.WebdavStart(webdavStartName, sftpBind, addPort, sftpAllowRemote)
 	case webdavStopName != "":
