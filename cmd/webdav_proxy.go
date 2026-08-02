@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"qssh/internal/i18n"
 	"qssh/webdav"
@@ -22,10 +23,16 @@ func WebdavStart(name, bindAddr string, port int, allowRemote bool) {
 	if allowRemote {
 		fmt.Fprintln(os.Stderr, i18n.T("webdav.warn_remote"))
 	}
-	if err := webdav.Start(name, bindAddr, port, allowRemote); err != nil {
+	url, err := webdav.Start(name, bindAddr, port, allowRemote)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, i18n.T("webdav.failed")+"\n", err)
 		os.Exit(1)
 	}
+	// Print both protocol forms: dav:// (gio/davfs2/Linux, KDE) and http://
+	// (Finder "Connect to Server", Windows Map Network Drive).
+	fmt.Println(i18n.T("webdav.url"))
+	fmt.Printf("  dav://%s\n", strings.TrimPrefix(url, "http://"))
+	fmt.Printf("  %s\n", url)
 }
 
 // WebdavStop stops the WebDAV server for the profile.

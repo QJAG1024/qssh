@@ -5,6 +5,7 @@
 package webdav
 
 import (
+	"errors"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/pkg/sftp"
 	"qssh/internal"
+	"qssh/internal/i18n"
 	"qssh/sftpproxy"
 	"qssh/sshclient"
 	"qssh/store"
@@ -87,13 +89,14 @@ func saveState(m map[string]entry) {
 
 // Start forks a WebDAV daemon for the profile. bindAddr must be loopback
 // unless allowRemote is true. port 0 picks a random port.
-func Start(name, bindAddr string, port int, allowRemote bool) error {
+func Start(name, bindAddr string, port int, allowRemote bool) (string, error) {
 	if err := sftpproxy.ValidateBindAddr(bindAddr, allowRemote); err != nil {
-		return err
+		return "", err
 	}
 	st := loadState()
-	if _, exists := st[name]; exists {
-		return fmt.Errorf("profile %q is already running", name)
+	if existing, exists := st[name]; exists && existing.Status != "failed" {
+		// Already running — return the existing URL (idempotent start UX).
+		return existing.URL, nil
 	}
 
 	portStr := "0"
@@ -102,7 +105,7 @@ func Start(name, bindAddr string, port int, allowRemote bool) error {
 	}
 	ln, err := net.Listen("tcp", net.JoinHostPort(bindAddr, portStr))
 	if err != nil {
-		return fmt.Errorf("listen: %w", err)
+		return "", fmt.Errorf("listen: %w", err)
 	}
 	port = ln.Addr().(*net.TCPAddr).Port
 	ln.Close()
@@ -123,7 +126,7 @@ func Start(name, bindAddr string, port int, allowRemote bool) error {
 	if err := cmd.Start(); err != nil {
 		delete(st, name)
 		saveState(st)
-		return fmt.Errorf("fork: %w", err)
+		return "", fmt.Errorf("fork: %w", err)
 	}
 
 	// Wait for ready.
@@ -133,13 +136,12 @@ func Start(name, bindAddr string, port int, allowRemote bool) error {
 		e := loadState()[name]
 		switch e.Status {
 		case "ready":
-			fmt.Printf("WebDAV: %s\n", url)
-			return nil
+			return url, nil
 		case "failed":
-			return fmt.Errorf("webdav daemon failed: %s", e.Message)
+			return "", fmt.Errorf(i18n.T("webdav.daemon_failed"), e.Message)
 		}
 	}
-	return fmt.Errorf("webdav daemon did not become ready in time")
+	return "", errors.New(i18n.T("webdav.timeout"))
 }
 
 // Stop terminates the WebDAV daemon for the profile.
