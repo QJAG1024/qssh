@@ -1,9 +1,9 @@
 ---
 name: qssh
-description: "QSSH SSH credential manager for CLI and AI agent usage. Execute remote commands, proxy SFTP mounts, and reuse SSH connections via managed daemon. Use when the user wants to run a command on a remote host, check system status, collect logs, deploy software, start/stop an SFTP proxy, or manage remote servers from the terminal. Triggers on: 'qssh', '--exec', '--sftp', '--daemon', 'remote command', 'SSH exec', 'run on server', 'deploy to host', 'check remote host'."
+description: "QSSH SSH credential manager for CLI and AI agent usage. Execute remote commands, mount remote files via WebDAV, proxy SFTP, export/import encrypted profiles, and reuse SSH connections via managed daemon. Use when the user wants to run a command on a remote host, check system status, collect logs, deploy software, mount remote files, start/stop an SFTP proxy or WebDAV server, or manage remote servers from the terminal. Triggers on: 'qssh', '--exec', '--sftp', '--webdav', '--daemon', '--export', 'remote command', 'SSH exec', 'run on server', 'deploy to host', 'check remote host', 'mount remote'."
 license: MIT
 metadata:
-  version: "2.0"
+  version: "2.1"
   category: developer-tools
 ---
 
@@ -55,6 +55,12 @@ The second and third calls complete in <100ms.
 | `--rename <old> <new>` | Rename a profile. |
 | `--sftp-start <host>` | Start SFTP proxy (returns port + fingerprint). |
 | `--sftp-stop <host>` | Stop running SFTP proxy. |
+| `--sftp` | Show SFTP proxy status (all profiles or per-profile). |
+| `--webdav-start <host>` | Start WebDAV mount (returns dav:// and http:// URLs). |
+| `--webdav-stop <host>` | Stop WebDAV mount. |
+| `--webdav` | Show WebDAV status (all profiles or per-profile). |
+| `--export <host>` | Export profile to passphrase-encrypted .qssh file. |
+| `--import <file> --name <n>` | Import profile from .qssh (supplies name). |
 | `--daemon-start <host>` | Start persistent daemon (long-lived, manual stop). |
 | `--daemon-stop <host>` | Stop persistent daemon. |
 | `--history [host]` | Show connection history (all or per-profile). |
@@ -136,7 +142,47 @@ qssh --sftp-start myserver
 
 # Stop proxy
 qssh --sftp-stop myserver
+
+# Status
+qssh --sftp myserver        # one profile
+qssh --sftp                 # all profiles
 ```
+
+### WebDAV mount (native file manager access)
+
+```bash
+# Start — prints dav:// and http:// URLs
+qssh --webdav-start myserver
+# → dav://127.0.0.1:34123/
+#   http://127.0.0.1:34123/
+
+# Mount in Finder / Explorer / Linux file manager using the URL.
+# Stop
+qssh --webdav-stop myserver
+
+# Status
+qssh --webdav myserver
+```
+
+Non-loopback binds (`--bind 0.0.0.0`) auto-enable token auth — the printed
+URL carries the token (`?token=` or `dav://qssh:token@`). Loopback is open
+(no auth), same trust model as the SFTP proxy.
+
+### Profile export / import (cross-machine)
+
+```bash
+# Export (interactive passphrase; --dir for non-interactive stdin passphrase)
+qssh --export myserver
+printf 'passphrase\n' | qssh --export myserver --dir ~/backups
+
+# Import (--name for non-interactive; passphrase from stdin)
+qssh --import myserver.qssh --name myserver
+```
+
+Exported files are passphrase-encrypted (AES-256-GCM + PBKDF2); the profile
+name is not stored (importer names it); private keys are embedded and
+restored to ~/.ssh on import if missing. Proxy (jump host) is dropped with
+a warning.
 
 ### Profile creation — single-line (non-interactive)
 
@@ -196,6 +242,9 @@ In most cases you don't need this — `--exec` auto-starts a managed daemon auto
 9. **DO NOT** try to read credentials or SSH keys directly. Use `--exec` for remote access.
 10. **DO NOT** run interactive commands that need a PTY (e.g. `vim`, `top`). `--exec` has no PTY; use `qssh <profile>` for interactive shells.
 11. **DO NOT** use shell-specific syntax unless the remote host supports it. Prefer POSIX-compatible commands.
+12. **DO** use `--webdav-start` when the user wants to browse/edit remote files in a GUI file manager.
+13. **DO** use `--export`/`--import` when migrating profiles between machines; passphrase comes from stdin in scripts.
+14. **DO NOT** pass secrets via `--password`/`--key-passphrase` in shared environments — it shows in the process list.
 
 ## Notes
 
