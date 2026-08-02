@@ -203,6 +203,36 @@ Setting a non-loopback global `sftp.bind` is not blocked at config time, but
 `--sftp-allow-remote` is **deprecated** (kept for script compatibility):
 non-loopback binds are now authorized by `--bind` or per-profile `sftp.bind`.
 
+## WebDAV Mount
+
+An SFTP-backed WebDAV server that mounts the remote file system in native
+file managers (macOS Finder, Windows Explorer, Linux gvfs/KDE). Optimized
+for high-latency links: PROPFIND builds the response from a single ReadDir
+(no per-entry round-trips — see [webdav-design.md](webdav-design.md)).
+
+```bash
+# Start
+qssh --webdav-start srv
+# → WebDAV:
+#     dav://127.0.0.1:34123/
+#     http://127.0.0.1:34123/
+
+# Stop
+qssh --webdav-stop srv
+```
+
+Mount (per OS):
+- **macOS**: Finder → Go → Connect to Server → `http://127.0.0.1:<port>/`
+- **Windows**: Explorer → Map network drive → `http://127.0.0.1:<port>/`
+- **Linux**: file manager address bar `dav://127.0.0.1:<port>/` (or `gio mount`)
+
+**Token auth.** Loopback binds are open (same trust model as the SFTP proxy).
+Non-loopback binds (`--bind 0.0.0.0` or per-profile `webdav.bind`) generate a
+random token required via `X-QSSH-Token` header or `?token=` query; the
+printed URL carries it. `webdav.token_mode=always` (global or per-profile)
+requires a token even on loopback.
+
+
 ---
 
 ## Daemon (Connection Reuse)
