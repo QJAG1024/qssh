@@ -6,6 +6,6 @@ import "syscall"
 
 // daemonSysProcAttr returns SysProcAttr for the mount daemon process.
 // On Windows, Setpgid is not available.
-func daemonSysProcAttr() *syscall.SysProcAttr {
+func DaemonSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{}
 }

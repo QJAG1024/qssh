@@ -57,6 +57,9 @@ func main() {
 		sftpBind        string
 		sftpAllowRemote bool
 		sftpStopName    string
+		webdavStartName string
+		webdavStopName  string
+		webdavDaemon    string // --webdav-daemon (internal)
 		exportName      string
 		exportDir       string
 		importFile      string
@@ -99,6 +102,9 @@ func main() {
 	flag.StringVar(&sftpBind, "bind", "", "Bind address for SFTP proxy (default: 127.0.0.1)")
 	flag.BoolVar(&sftpAllowRemote, "sftp-allow-remote", false, "DEPRECATED: non-loopback binds are now authorized by --bind or per-profile sftp.bind")
 	flag.StringVar(&sftpStopName, "sftp-stop", "", "Stop SFTP proxy for a profile (usage: qssh --sftp-stop <name>)")
+	flag.StringVar(&webdavStartName, "webdav-start", "", "Start WebDAV server for a profile (usage: qssh --webdav-start <name>)")
+	flag.StringVar(&webdavStopName, "webdav-stop", "", "Stop WebDAV server for a profile")
+	flag.StringVar(&webdavDaemon, "webdav-daemon", "", "Internal: WebDAV worker (profile name)")
 	flag.StringVar(&exportName, "export", "", "Export a profile to an encrypted .qssh file (usage: qssh --export <name>)")
 	flag.StringVar(&exportDir, "dir", "", "Output dir for --export (default: current dir; non-interactive mode reads passphrase from stdin)")
 	flag.StringVar(&importFile, "import", "", "Import a profile from an encrypted .qssh file (usage: qssh --import <file>)")
@@ -164,6 +170,8 @@ func main() {
 		cmd.StopDaemon(daemonStop)
 	case sftpDaemon != "":
 		cmd.SftpDaemon(sftpDaemon, daemonPort, daemonBind, sftpAllowRemote)
+	case webdavDaemon != "":
+		cmd.WebdavDaemon(webdavDaemon, daemonPort, daemonBind, sftpAllowRemote)
 	case doConfig:
 		cmd.Config(flag.Args())
 	case addName != "":
@@ -226,6 +234,10 @@ func main() {
 		cmd.SftpStart(sftpStartName, sftpBind, addPort, sftpAllowRemote)
 	case sftpStopName != "":
 		cmd.SftpStop(sftpStopName)
+	case webdavStartName != "":
+		cmd.WebdavStart(webdavStartName, sftpBind, addPort, sftpAllowRemote)
+	case webdavStopName != "":
+		cmd.WebdavStop(webdavStopName)
 	case exportName != "":
 		cmd.Export(exportName, exportDir)
 	case importFile != "":

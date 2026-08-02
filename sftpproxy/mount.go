@@ -156,7 +156,7 @@ func Start(name, bindAddr string, port int, allowRemote bool) error {
 		args = append(args, "--sftp-allow-remote")
 	}
 	cmd := exec.Command(os.Args[0], args...)
-	cmd.SysProcAttr = daemonSysProcAttr()
+	cmd.SysProcAttr = DaemonSysProcAttr()
 	cmd.Stderr = nil // detach stderr
 	cmd.Stdout = nil
 	cmd.Stdin = nil
