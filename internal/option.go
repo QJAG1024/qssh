@@ -30,6 +30,8 @@ var perProfileOptionKeys = map[string]string{
 	"hostkey.mode":            "Host key policy: tofu|strict (per-profile override of global)",
 	"history.record_commands": "History recording: full|masked|off (per-profile override of global)",
 	"sftp.bind":               "SFTP proxy bind address (per-profile override of global)",
+	"webdav.bind":             "WebDAV bind address (per-profile override of global)",
+	"webdav.token_mode":       "WebDAV token mode: auto|always (per-profile override of global)",
 }
 
 // globalOnlyOptionKeys are config keys that cannot be set per-profile.
@@ -52,7 +54,7 @@ func ValidateOptionKeys(keys []string) []string {
 			errs = append(errs, hint)
 			continue
 		}
-		errs = append(errs, fmt.Sprintf("unsupported per-profile option %q (supported: ConnectTimeout, SetEnv, term.mode, hostkey.mode, history.record_commands, sftp.bind)", k))
+		errs = append(errs, fmt.Sprintf("unsupported per-profile option %q (supported: ConnectTimeout, SetEnv, term.mode, hostkey.mode, history.record_commands, sftp.bind, webdav.bind, webdav.token_mode)", k))
 	}
 	return errs
 }

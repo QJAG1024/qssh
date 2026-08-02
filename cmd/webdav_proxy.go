@@ -5,7 +5,9 @@ import (
 	"os"
 	"strings"
 
+	"qssh/internal"
 	"qssh/internal/i18n"
+	"qssh/sftpproxy"
 	"qssh/webdav"
 )
 
@@ -15,15 +17,44 @@ func init() {
 }
 
 // WebdavStart starts a WebDAV server for the profile.
-// bindAddr defaults to loopback; non-loopback requires allowRemote.
-func WebdavStart(name, bindAddr string, port int, allowRemote bool) {
+// Effective bind address: CLI --bind > profile webdav.bind > global
+// webdav.bind > 127.0.0.1. Token mode: profile/global webdav.token_mode
+// (auto|always), default auto.
+func WebdavStart(name, cliBind string, port int, allowRemote bool) {
+	// Load the profile for per-profile webdav.bind / webdav.token_mode.
+	var profileOpts map[string]string
+	if cliBind == "" {
+		st, err := openStore()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, i18n.T("store.open_error")+"\n", err)
+			os.Exit(1)
+		}
+		p, exists := st.Get(name)
+		if !exists {
+			fmt.Fprintf(os.Stderr, i18n.T("profile.not_found")+"\n", name)
+			os.Exit(1)
+		}
+		profileOpts = p.Options
+	}
+
+	bindAddr := cliBind
+	if bindAddr == "" {
+		bindAddr = internal.EffectiveOption(profileOpts, "webdav.bind")
+	}
 	if bindAddr == "" {
 		bindAddr = "127.0.0.1"
 	}
-	if allowRemote {
+
+	tokenMode := internal.EffectiveOption(profileOpts, "webdav.token_mode")
+	if tokenMode == "" {
+		tokenMode = "auto"
+	}
+
+	if allowRemote || !isLoopback(bindAddr) {
 		fmt.Fprintln(os.Stderr, i18n.T("webdav.warn_remote"))
 	}
-	url, err := webdav.Start(name, bindAddr, port, allowRemote)
+
+	url, err := webdav.Start(name, bindAddr, port, allowRemote, tokenMode)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, i18n.T("webdav.failed")+"\n", err)
 		os.Exit(1)
@@ -47,6 +78,11 @@ func WebdavStart(name, bindAddr string, port int, allowRemote bool) {
 	fmt.Fprintln(os.Stderr, i18n.T("webdav.mount_hint"))
 }
 
+// isLoopback reports whether a bind address resolves only to loopback.
+func isLoopback(addr string) bool {
+	return sftpproxy.IsLoopbackAddr(addr)
+}
+
 // WebdavStop stops the WebDAV server for the profile.
 func WebdavStop(name string) {
 	if err := webdav.Stop(name); err != nil {
@@ -57,6 +93,6 @@ func WebdavStop(name string) {
 }
 
 // WebdavDaemon is the hidden entry point for the WebDAV worker.
-func WebdavDaemon(name, port, bindAddr string, allowRemote bool) {
-	webdav.Daemon(name, port, bindAddr, allowRemote)
+func WebdavDaemon(name, port, bindAddr string, allowRemote bool, tokenMode string) {
+	webdav.Daemon(name, port, bindAddr, allowRemote, tokenMode)
 }

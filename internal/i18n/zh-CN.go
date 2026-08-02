@@ -166,6 +166,8 @@ var zhCN = map[string]string{
 	"config.key.term_mode":               "PTY $TERM 透传（compat=强制 xterm）",
 	"config.key.history_record_commands": "默认命令记录级别: full|masked|off",
 	"config.key.history_max_size":        "历史文件大小上限",
+	"config.key.webdav_bind":               "WebDAV 默认绑定地址",
+	"config.key.webdav_token_mode":       "WebDAV 令牌模式: auto|always",
 
 	// 交互式添加
 	"add.panel.title":        "正在创建凭据: %s",

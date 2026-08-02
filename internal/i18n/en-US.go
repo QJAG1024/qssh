@@ -166,6 +166,8 @@ var enUS = map[string]string{
 	"config.key.term_mode":               "PTY $TERM passthrough (compat=force xterm)",
 	"config.key.history_record_commands": "Default command recording: full|masked|off",
 	"config.key.history_max_size":        "History file size cap",
+	"config.key.webdav_bind":               "Default WebDAV bind address",
+	"config.key.webdav_token_mode":       "WebDAV token mode: auto|always",
 
 	// Interactive add
 	"add.panel.title":        "Creating profile: %s",

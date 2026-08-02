@@ -92,7 +92,7 @@ func saveState(m map[string]entry) {
 
 // Start forks a WebDAV daemon for the profile. bindAddr must be loopback
 // unless allowRemote is true. port 0 picks a random port.
-func Start(name, bindAddr string, port int, allowRemote bool) (string, error) {
+func Start(name, bindAddr string, port int, allowRemote bool, tokenMode string) (string, error) {
 	// WebDAV's own auth (token on non-loopback) replaces the SFTP proxy's
 	// allow_non_loopback gate: binding non-loopback is fine because every
 	// request then requires a token. Only refuse truly unspecified binds.
@@ -123,6 +123,9 @@ func Start(name, bindAddr string, port int, allowRemote bool) (string, error) {
 	args := []string{"--webdav-daemon", name, "--daemon-port", fmt.Sprintf("%d", port), "--bind-addr", bindAddr}
 	if allowRemote {
 		args = append(args, "--sftp-allow-remote")
+	}
+	if tokenMode != "" {
+		args = append(args, "--token-mode", tokenMode)
 	}
 	cmd := exec.Command(os.Args[0], args...)
 	cmd.SysProcAttr = sftpproxy.DaemonSysProcAttr()
@@ -180,7 +183,7 @@ func Stop(name string) error {
 // --- Daemon worker (--webdav-daemon) ---
 
 // Daemon runs the WebDAV server in the child process.
-func Daemon(profileName, portStr, bindAddr string, allowRemote bool) {
+func Daemon(profileName, portStr, bindAddr string, allowRemote bool, tokenMode string) {
 	port := 0
 	fmt.Sscanf(portStr, "%d", &port)
 	if port == 0 {
@@ -232,7 +235,8 @@ func Daemon(profileName, portStr, bindAddr string, allowRemote bool) {
 	// trust model as the SFTP proxy). The token is embedded in the URL and
 	// must be sent via X-QSSH-Token header or ?token= query.
 	token := ""
-	if !sftpproxy.IsLoopbackAddr(bindAddr) {
+	nonLoop := !sftpproxy.IsLoopbackAddr(bindAddr)
+	if nonLoop || tokenMode == "always" {
 		token = randomToken()
 	}
 

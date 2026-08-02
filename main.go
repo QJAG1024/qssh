@@ -72,6 +72,7 @@ func main() {
 		daemonModeFlag  string // --daemon-mode (internal)
 		daemonPort      string // --port (internal)
 		daemonBind      string // --bind-addr (internal)
+		daemonTokenMode string // --token-mode (internal)
 		doConfig        bool
 		doList          bool
 		listJSON        bool
@@ -117,6 +118,7 @@ func main() {
 	flag.StringVar(&daemonModeFlag, "daemon-mode", "", "Internal: daemon mode (persistent|managed)")
 	flag.StringVar(&daemonPort, "daemon-port", "", "Internal: port")
 	flag.StringVar(&daemonBind, "bind-addr", "", "Internal: bind address")
+	flag.StringVar(&daemonTokenMode, "token-mode", "", "Internal: WebDAV token mode")
 	flag.BoolVar(&doConfig, "config", false, "View or modify config (usage: qssh --config [get|set <key> <value>])")
 	flag.BoolVar(&doList, "list", false, "List profiles (optional: qssh --list filter)")
 	flag.BoolVar(&listJSON, "json", false, "Machine-readable JSON output (use with --list)")
@@ -171,7 +173,7 @@ func main() {
 	case sftpDaemon != "":
 		cmd.SftpDaemon(sftpDaemon, daemonPort, daemonBind, sftpAllowRemote)
 	case webdavDaemon != "":
-		cmd.WebdavDaemon(webdavDaemon, daemonPort, daemonBind, sftpAllowRemote)
+		cmd.WebdavDaemon(webdavDaemon, daemonPort, daemonBind, sftpAllowRemote, daemonTokenMode)
 	case doConfig:
 		cmd.Config(flag.Args())
 	case addName != "":

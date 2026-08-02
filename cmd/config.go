@@ -223,6 +223,14 @@ func configKnownKeys() map[string]configKeyMeta {
 			desc:       "config.key.sftp_bind",
 			defaultVal: "127.0.0.1",
 		},
+		"webdav.bind": {
+			desc:       "config.key.webdav_bind",
+			defaultVal: "127.0.0.1",
+		},
+		"webdav.token_mode": {
+			desc:    "config.key.webdav_token_mode",
+			options: []string{"auto", "always"},
+		},
 		"term.mode": {
 			desc: "config.key.term_mode",
 		},

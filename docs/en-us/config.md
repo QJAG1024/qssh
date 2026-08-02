@@ -10,6 +10,8 @@ Use `qssh --config` to manage settings.
 | `store.backend` | `file`, `keyring` | Auto-probed | Master key storage backend. `file` uses `~/.config/qssh/store.key`; `keyring` uses GNOME Keyring (`secret-tool`). `file` is preferred when a `store.key` already exists. |
 | `lang` | `en-US`, `zh-CN` | `en-US` | UI language. |
 | `sftp.bind` | IP address | `127.0.0.1` | Default bind address for `--sftp-start`. Non-loopback requires `sftp.allow_non_loopback=true` (global) — or set it per-profile, where the profile choice itself authorizes the bind (see Per-profile overrides). |
+| `webdav.bind` | IP address | `127.0.0.1` | Default bind address for `--webdav-start`. Non-loopback enables token auth automatically. Per-profile override via `--set-option webdav.bind=...`. |
+| `webdav.token_mode` | `auto`, `always` | `auto` | WebDAV token auth: `auto` (loopback open, non-loopback token), `always` (token even on loopback). Per-profile override via `--set-option webdav.token_mode=...`. |
 | `hostkey.mode` | `tofu`, `strict` | `tofu` | `tofu`: accept unknown host keys on first use (fingerprint logged to `hostkey.log`). `strict`: reject unknown hosts. |
 | `term.mode` | `passthrough`, `compat` | `passthrough` | `passthrough`: send local `$TERM` as-is to the remote PTY. `compat`: force `xterm` (for hosts missing `ncurses-term`). |
 | `history.max_size` | Size string | `5M` | Maximum history file size. Supports `K`/`M`/`G` suffixes. Oldest entries are trimmed on each append. |
