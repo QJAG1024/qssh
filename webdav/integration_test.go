@@ -229,3 +229,34 @@ func TestWebDAV_Readonly(t *testing.T) {
 		t.Error("readonly PUT should not create file")
 	}
 }
+
+func TestWebDAV_Propfind(t *testing.T) {
+	srv, root := newTestServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// Real PROPFIND depth:1 on the tempdir.
+	req, _ := http.NewRequest("PROPFIND", urlFor(ts, root), nil)
+	req.Header.Set("Depth", "1")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 207 {
+		t.Fatalf("PROPFIND status = %d, want 207 Multi-Status", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	content := string(body)
+	// The listing must include the file and the subdir.
+	if !strings.Contains(content, "hello.txt") {
+		t.Errorf("PROPFIND missing hello.txt: %s", content[:200])
+	}
+	if !strings.Contains(content, "subdir") {
+		t.Errorf("PROPFIND missing subdir: %s", content[:200])
+	}
+	// Must be DAV: multistatus XML.
+	if !strings.Contains(content, "multistatus") || !strings.Contains(content, "DAV:") {
+		t.Errorf("PROPFIND not DAV multistatus: %s", content[:200])
+	}
+}
