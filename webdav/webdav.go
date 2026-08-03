@@ -4,6 +4,7 @@
 package webdav
 
 import (
+	"crypto/subtle"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -83,12 +84,13 @@ const (
 // ServeHTTP routes WebDAV methods.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Token auth: header X-QSSH-Token or ?token= query param.
+	// Constant-time compare so response timing cannot leak the token.
 	if s.token != "" {
 		got := r.Header.Get("X-QSSH-Token")
 		if got == "" {
 			got = r.URL.Query().Get("token")
 		}
-		if got != s.token {
+		if subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
