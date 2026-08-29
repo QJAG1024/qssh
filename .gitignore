@@ -13,3 +13,5 @@
 Thumbs.db
 # Archive (throwaway design notes / reports)
 /archive/
+# Pi session scratch (agent subagent workspaces)
+.pi-subagents/

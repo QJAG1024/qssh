@@ -174,7 +174,12 @@ func RunDaemon(profile string, modeStr string) {
 		os.Exit(1)
 	}
 
+	// Unix sockets honor the process umask at bind time; temporarily
+	// restrict it so the socket is never world-accessible even for the
+	// window between bind and chmod below.
+	old := umask(0077)
 	listener, err := net.Listen("unix", sockPath)
+	umask(old)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "listen: %v\n", err)
 		os.Exit(1)
