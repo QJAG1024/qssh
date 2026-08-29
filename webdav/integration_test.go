@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/pkg/sftp"
+	"qssh/internal/daemonstate"
 )
 
 // startInMemorySFTP spins up an in-process SFTP server over io.Pipe
@@ -183,14 +184,17 @@ func TestWebDAV_TokenAuth(t *testing.T) {
 func TestWebDAV_StateFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("QSSH_WEBDAV_STATE", filepath.Join(dir, "webdav.json"))
-	// saveState + loadState roundtrip.
-	m := map[string]entry{"p": {Port: 1234, PID: 42, URL: "http://127.0.0.1:1234/", Status: "ready"}}
-	saveState(m)
+	// SetEntry + All roundtrip through the shared daemonstate file.
+	if err := stateFile().SetEntry("p", daemonstate.Entry{
+		Port: 1234, PID: 42, URL: "http://127.0.0.1:1234/", Status: daemonstate.StatusReady,
+	}); err != nil {
+		t.Fatalf("SetEntry: %v", err)
+	}
 	if _, err := os.Stat(statePath()); err != nil {
 		t.Fatalf("state file not created: %v", err)
 	}
-	got := loadState()
-	if got["p"].Port != 1234 || got["p"].Status != "ready" {
+	got := stateFile().All()
+	if got["p"].Port != 1234 || got["p"].Status != daemonstate.StatusReady {
 		t.Errorf("state roundtrip = %+v", got["p"])
 	}
 	_ = json.Valid

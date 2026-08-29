@@ -1,7 +1,6 @@
 package sftpproxy
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -9,7 +8,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -18,23 +16,13 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"qssh/internal"
+	"qssh/internal/daemonstate"
 	"qssh/internal/i18n"
 	"qssh/sshclient"
 	"qssh/store"
 )
 
 // --- State file ---
-
-type sftpEntry struct {
-	Port        int    `json:"port"`
-	PID         int    `json:"pid"`
-	StartTime   uint64 `json:"start_time,omitempty"`
-	Exe         string `json:"exe,omitempty"`
-	URL         string `json:"url"`
-	Status      string `json:"status"` // "starting", "ready", "failed"
-	Message     string `json:"message,omitempty"`
-	Fingerprint string `json:"fingerprint,omitempty"`
-}
 
 func statePath() string {
 	if p := os.Getenv("QSSH_SFTP_STATE"); p != "" {
@@ -47,60 +35,9 @@ func statePath() string {
 	return filepath.Join(configDir, "qssh", "sftp.json")
 }
 
-var stateMu sync.Mutex
-
-func loadState() map[string]sftpEntry {
-	stateMu.Lock()
-	defer stateMu.Unlock()
-	data, err := os.ReadFile(statePath())
-	if err != nil {
-		return map[string]sftpEntry{}
-	}
-	var m map[string]sftpEntry
-	json.Unmarshal(data, &m)
-	if m == nil {
-		m = make(map[string]sftpEntry)
-	}
-	return m
-}
-
-func saveState(m map[string]sftpEntry) {
-	stateMu.Lock()
-	defer stateMu.Unlock()
-	data, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return
-	}
-	path := statePath()
-	dir := filepath.Dir(path)
-	_ = os.MkdirAll(dir, 0700)
-	tmp, err := os.CreateTemp(dir, ".sftp-*.tmp")
-	if err != nil {
-		return
-	}
-	tmpName := tmp.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			os.Remove(tmpName)
-		}
-	}()
-	if err := tmp.Chmod(0600); err != nil {
-		tmp.Close()
-		return
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return
-	}
-	if err := tmp.Close(); err != nil {
-		return
-	}
-	if err := internal.ReplaceFile(tmpName, path); err != nil {
-		return
-	}
-	cleanup = false
-}
+// stateFile returns a handle to this service's daemon state file. A fresh
+// handle per call keeps tests that swap QSSH_SFTP_STATE per-test isolated.
+func stateFile() *daemonstate.File { return daemonstate.Open(statePath()) }
 
 // configDir returns the qssh config directory path.
 func configDir() string {
@@ -121,8 +58,7 @@ func Start(name, bindAddr string, port int, allowRemote bool) error {
 		return err
 	}
 
-	state := loadState()
-	if _, exists := state[name]; exists {
+	if _, exists := stateFile().Get(name); exists {
 		return fmt.Errorf("profile %q is already running", name)
 	}
 
@@ -140,13 +76,14 @@ func Start(name, bindAddr string, port int, allowRemote bool) error {
 
 	// Write initial state before forking.
 	sftpURL := fmt.Sprintf("sftp://%s:%d", bindAddr, port)
-	state[name] = sftpEntry{
+	if err := stateFile().SetEntry(name, daemonstate.Entry{
 		Port:    port,
 		URL:     sftpURL,
-		Status:  "starting",
+		Status:  daemonstate.StatusStarting,
 		Message: i18n.T("sftp.preparing"),
+	}); err != nil {
+		return fmt.Errorf("write sftp state: %w", err)
 	}
-	saveState(state)
 
 	// Fork daemon — re-exec self with hidden flag.
 	// Pass --sftp-allow-remote so CLI-only authorization is not lost
@@ -161,8 +98,7 @@ func Start(name, bindAddr string, port int, allowRemote bool) error {
 	cmd.Stdout = nil
 	cmd.Stdin = nil
 	if err := cmd.Start(); err != nil {
-		delete(state, name)
-		saveState(state)
+		_ = stateFile().DeleteEntry(name)
 		return fmt.Errorf("fork daemon: %w", err)
 	}
 
@@ -171,8 +107,7 @@ func Start(name, bindAddr string, port int, allowRemote bool) error {
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
-		st := loadState()
-		entry, ok := st[name]
+		entry, ok := stateFile().Get(name)
 		if !ok {
 			break // cleaned up — daemon likely failed
 		}
@@ -181,7 +116,7 @@ func Start(name, bindAddr string, port int, allowRemote bool) error {
 			lastMsg = entry.Message
 		}
 		switch entry.Status {
-		case "ready":
+		case daemonstate.StatusReady:
 			fmt.Printf(i18n.T("sftp.proxy_started")+"\n", sftpURL)
 			if entry.Fingerprint != "" {
 				fmt.Fprintf(os.Stderr, "  SSH fingerprint: %s\n", entry.Fingerprint)
@@ -190,20 +125,17 @@ func Start(name, bindAddr string, port int, allowRemote bool) error {
 				fmt.Fprintln(os.Stderr, "  "+entry.Message)
 			}
 			return nil
-		case "failed":
+		case daemonstate.StatusFailed:
 			return fmt.Errorf("daemon failed")
 		}
 	}
 
 	// Timeout — clean up orphaned daemon and its state.
-	st := loadState()
-	if entry, ok := st[name]; ok {
-		id := internal.ProcessIdentity{PID: entry.PID, StartTime: entry.StartTime, Exe: entry.Exe}
-		if err := internal.MatchIdentity(id); err == nil {
-			_ = internal.GracefulStopIdent(id)
+	if entry, ok := stateFile().Get(name); ok {
+		if err := internal.MatchIdentity(entry.Identity()); err == nil {
+			_ = internal.GracefulStopIdent(entry.Identity())
 		}
-		delete(st, name)
-		saveState(st)
+		_ = stateFile().DeleteEntry(name)
 	}
 	return fmt.Errorf("daemon did not become ready in time")
 }
@@ -319,23 +251,17 @@ func SftpDaemon(profileName, portStr, bindAddr string, allowRemote bool) {
 // --- Stop ---
 
 func Stop(name string) error {
-	state := loadState()
-	entry, exists := state[name]
+	entry, exists := stateFile().Get(name)
 	if !exists {
 		return fmt.Errorf("profile %q is not running", name)
 	}
 
-	id := internal.ProcessIdentity{
-		PID:       entry.PID,
-		StartTime: entry.StartTime,
-		Exe:       entry.Exe,
-	}
+	id := entry.Identity()
 	// Refuse to signal a bare PID left over from a pre-identity sftp.json.
 	// A stale/recycled PID could belong to any user process; only clean
 	// state and leave any real process alone.
-	if id.StartTime == 0 && id.Exe == "" {
-		delete(state, name)
-		saveState(state)
+	if !entry.HasIdentity() {
+		_ = stateFile().DeleteEntry(name)
 		return fmt.Errorf("sftp state for %q lacks start-time/exe identity; refusing to signal bare PID %d", name, id.PID)
 	}
 	// Kill daemon — validate full identity before signaling.
@@ -352,8 +278,7 @@ func Stop(name string) error {
 		}
 	}
 
-	delete(state, name)
-	saveState(state)
+	_ = stateFile().DeleteEntry(name)
 	// If kill failed because process is gone, that is success for Stop.
 	if killErr != nil {
 		// "not reachable" / starttime mismatch after exit are fine.
@@ -390,9 +315,7 @@ func SaveState(name string, port int, bindAddr string, id internal.ProcessIdenti
 
 // RemoveState removes an SFTP entry from the state file.
 func RemoveState(name string) {
-	state := loadState()
-	delete(state, name)
-	saveState(state)
+	_ = stateFile().DeleteEntry(name)
 }
 
 // --- Internal helpers ---
@@ -401,32 +324,23 @@ func markReady(name string, port int, url string, id internal.ProcessIdentity, f
 	if id.PID == 0 {
 		id = internal.CurrentIdentity()
 	}
-	state := loadState()
-	state[name] = sftpEntry{
+	_ = stateFile().SetEntry(name, daemonstate.Entry{
 		Port:        port,
 		PID:         id.PID,
 		StartTime:   id.StartTime,
 		Exe:         id.Exe,
 		URL:         url,
-		Status:      "ready",
+		Status:      daemonstate.StatusReady,
 		Fingerprint: fingerprint,
-	}
-	saveState(state)
+	})
 }
 
 func setProgress(name, msg string) {
-	state := loadState()
-	if entry, ok := state[name]; ok {
-		entry.Message = msg
-		state[name] = entry
-		saveState(state)
-	}
+	_ = stateFile().SetMessage(name, msg)
 }
 
 func setFailed(name string) {
-	state := loadState()
-	delete(state, name)
-	saveState(state)
+	_ = stateFile().DeleteEntry(name)
 }
 
 // openStoreFn is a package-level hook so the daemon can open the store
@@ -441,13 +355,13 @@ func SetOpenStore(fn func() (*store.Store, error)) {
 
 // Status returns the running SFTP proxy entries. When name is non-empty,
 // returns just that profile (nil if not running).
-func Status(name string) map[string]sftpEntry {
-	all := loadState()
+func Status(name string) map[string]daemonstate.Entry {
+	all := stateFile().All()
 	if name == "" {
 		return all
 	}
 	if e, ok := all[name]; ok {
-		return map[string]sftpEntry{name: e}
+		return map[string]daemonstate.Entry{name: e}
 	}
 	return nil
 }

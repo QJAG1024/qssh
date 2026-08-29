@@ -7,7 +7,6 @@ package webdav
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -16,12 +15,12 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/pkg/sftp"
 	"qssh/internal"
+	"qssh/internal/daemonstate"
 	"qssh/internal/i18n"
 	"qssh/sftpproxy"
 	"qssh/sshclient"
@@ -29,17 +28,6 @@ import (
 )
 
 // --- State file ---
-
-type entry struct {
-	Port      int    `json:"port"`
-	PID       int    `json:"pid"`
-	StartTime uint64 `json:"start_time,omitempty"`
-	Exe       string `json:"exe,omitempty"`
-	URL       string `json:"url"`
-	Token     string `json:"token,omitempty"` // bearer token; "" = no auth
-	Status    string `json:"status"` // "starting", "ready", "failed"
-	Message   string `json:"message,omitempty"`
-}
 
 func statePath() string {
 	if p := os.Getenv("QSSH_WEBDAV_STATE"); p != "" {
@@ -52,41 +40,9 @@ func statePath() string {
 	return filepath.Join(d, "qssh", "webdav.json")
 }
 
-var stateMu sync.Mutex
-
-func loadState() map[string]entry {
-	stateMu.Lock()
-	defer stateMu.Unlock()
-	data, err := os.ReadFile(statePath())
-	if err != nil {
-		return map[string]entry{}
-	}
-	var m map[string]entry
-	json.Unmarshal(data, &m)
-	if m == nil {
-		m = make(map[string]entry)
-	}
-	return m
-}
-
-func saveState(m map[string]entry) {
-	stateMu.Lock()
-	defer stateMu.Unlock()
-	data, _ := json.MarshalIndent(m, "", "  ")
-	path := statePath()
-	dir := filepath.Dir(path)
-	os.MkdirAll(dir, 0700)
-	tmp, err := os.CreateTemp(dir, ".webdav-*.tmp")
-	if err != nil {
-		return
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	tmp.Chmod(0600)
-	tmp.Write(data)
-	tmp.Close()
-	internal.ReplaceFile(tmpName, path)
-}
+// stateFile returns a handle to this service's daemon state file. A fresh
+// handle per call keeps tests that swap QSSH_WEBDAV_STATE per-test isolated.
+func stateFile() *daemonstate.File { return daemonstate.Open(statePath()) }
 
 // --- Start/Stop ---
 
@@ -99,8 +55,7 @@ func Start(name, bindAddr string, port int, allowRemote bool, tokenMode string, 
 	if bindAddr == "" {
 		return "", fmt.Errorf("bind address must be specified")
 	}
-	st := loadState()
-	if existing, exists := st[name]; exists && existing.Status != "failed" {
+	if existing, exists := stateFile().Get(name); exists && existing.Status != daemonstate.StatusFailed {
 		// Already running — return the existing URL (idempotent start UX).
 		return existing.URL, nil
 	}
@@ -117,8 +72,14 @@ func Start(name, bindAddr string, port int, allowRemote bool, tokenMode string, 
 	ln.Close()
 
 	url := fmt.Sprintf("http://%s:%d/", bindAddr, port)
-	st[name] = entry{Port: port, URL: url, Status: "starting", Message: "starting"}
-	saveState(st)
+	if err := stateFile().SetEntry(name, daemonstate.Entry{
+		Port:    port,
+		URL:     url,
+		Status:  daemonstate.StatusStarting,
+		Message: "starting",
+	}); err != nil {
+		return "", fmt.Errorf("write webdav state: %w", err)
+	}
 
 	args := []string{"--webdav-daemon", name, "--daemon-port", fmt.Sprintf("%d", port), "--bind-addr", bindAddr}
 	if allowRemote {
@@ -136,8 +97,7 @@ func Start(name, bindAddr string, port int, allowRemote bool, tokenMode string, 
 	cmd.Stdout = nil
 	cmd.Stdin = nil
 	if err := cmd.Start(); err != nil {
-		delete(st, name)
-		saveState(st)
+		_ = stateFile().DeleteEntry(name)
 		return "", fmt.Errorf("fork: %w", err)
 	}
 
@@ -145,15 +105,15 @@ func Start(name, bindAddr string, port int, allowRemote bool, tokenMode string, 
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
-		e := loadState()[name]
+		e, _ := stateFile().Get(name)
 		switch e.Status {
-		case "ready":
+		case daemonstate.StatusReady:
 			// Return the URL the daemon recorded (it carries the token).
 			if e.URL != "" {
 				return e.URL, nil
 			}
 			return url, nil
-		case "failed":
+		case daemonstate.StatusFailed:
 			return "", fmt.Errorf(i18n.T("webdav.daemon_failed"), e.Message)
 		}
 	}
@@ -162,15 +122,13 @@ func Start(name, bindAddr string, port int, allowRemote bool, tokenMode string, 
 
 // Stop terminates the WebDAV daemon for the profile.
 func Stop(name string) error {
-	st := loadState()
-	e, exists := st[name]
+	e, exists := stateFile().Get(name)
 	if !exists {
 		return fmt.Errorf("profile %q is not running", name)
 	}
-	id := internal.ProcessIdentity{PID: e.PID, StartTime: e.StartTime, Exe: e.Exe}
-	if id.StartTime == 0 && id.Exe == "" {
-		delete(st, name)
-		saveState(st)
+	id := e.Identity()
+	if !e.HasIdentity() {
+		_ = stateFile().DeleteEntry(name)
 		return fmt.Errorf("webdav state for %q lacks identity; refusing to signal bare PID %d", name, e.PID)
 	}
 	if e.PID > 1 {
@@ -178,8 +136,7 @@ func Stop(name string) error {
 			_ = internal.GracefulStopIdent(id)
 		}
 	}
-	delete(st, name)
-	saveState(st)
+	_ = stateFile().DeleteEntry(name)
 	return nil
 }
 
@@ -268,28 +225,25 @@ func Daemon(profileName, portStr, bindAddr string, allowRemote bool, tokenMode s
 // --- state helpers ---
 
 func markReady(name string, port int, url string, token string, id internal.ProcessIdentity) {
-	st := loadState()
-	st[name] = entry{Port: port, PID: id.PID, StartTime: id.StartTime, Exe: id.Exe, URL: url, Token: token, Status: "ready"}
-	saveState(st)
+	_ = stateFile().SetEntry(name, daemonstate.Entry{
+		Port: port, PID: id.PID, StartTime: id.StartTime, Exe: id.Exe,
+		URL: url, Token: token, Status: daemonstate.StatusReady,
+	})
 }
 
 func setProgress(name, msg string) {
-	st := loadState()
-	if e, ok := st[name]; ok {
-		e.Message = msg
-		st[name] = e
-		saveState(st)
-	}
+	_ = stateFile().SetMessage(name, msg)
 }
 
 func setFailed(name, msg string) {
-	st := loadState()
-	if e, ok := st[name]; ok {
-		e.Status = "failed"
-		e.Message = msg
-		st[name] = e
-		saveState(st)
-	}
+	_ = stateFile().With(func(m map[string]daemonstate.Entry) error {
+		if e, ok := m[name]; ok {
+			e.Status = daemonstate.StatusFailed
+			e.Message = msg
+			m[name] = e
+		}
+		return nil
+	})
 }
 
 // openStoreFn is wired by cmd (avoids import cycle).
@@ -299,7 +253,6 @@ var openStoreFn func() (*store.Store, error)
 func SetOpenStore(fn func() (*store.Store, error)) {
 	openStoreFn = fn
 }
-
 
 // randomToken returns a 16-byte hex token for WebDAV auth.
 func randomToken() string {
@@ -312,13 +265,13 @@ func randomToken() string {
 
 // Status returns the running WebDAV entries. When name is non-empty, returns
 // just that profile (nil if not running).
-func Status(name string) map[string]entry {
-	all := loadState()
+func Status(name string) map[string]daemonstate.Entry {
+	all := stateFile().All()
 	if name == "" {
 		return all
 	}
 	if e, ok := all[name]; ok {
-		return map[string]entry{name: e}
+		return map[string]daemonstate.Entry{name: e}
 	}
 	return nil
 }
