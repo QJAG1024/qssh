@@ -56,8 +56,14 @@ func Start(name, bindAddr string, port int, allowRemote bool, tokenMode string, 
 		return "", fmt.Errorf("bind address must be specified")
 	}
 	if existing, exists := stateFile().Get(name); exists && existing.Status != daemonstate.StatusFailed {
-		// Already running — return the existing URL (idempotent start UX).
-		return existing.URL, nil
+		// Idempotent start only when the recorded daemon is actually alive.
+		// A crashed daemon leaves a stale starting/ready entry; without a
+		// liveness check every subsequent start would return a dead URL.
+		if internal.MatchIdentity(existing.Identity()) == nil {
+			return existing.URL, nil
+		}
+		// Stale entry from a dead process — clean it up and start fresh.
+		_ = stateFile().DeleteEntry(name)
 	}
 
 	portStr := "0"
@@ -205,7 +211,15 @@ func Daemon(profileName, portStr, bindAddr string, allowRemote bool, tokenMode s
 		srv.SetToken(token)
 	}
 	srv.SetReadonly(readonly)
-	go http.Serve(ln, srv)
+	// ReadHeaderTimeout defends against slowloris-style connection
+	// exhaustion (the daemon is an HTTP server, optionally non-loopback).
+	// No WriteTimeout: large file transfers legitimately take minutes.
+	httpSrv := &http.Server{
+		Handler:           srv,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	go httpSrv.Serve(ln)
 
 	url := fmt.Sprintf("http://%s:%d/", bindAddr, port)
 	if token != "" {

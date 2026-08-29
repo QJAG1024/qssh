@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"qssh/internal/daemonstate"
 )
 
 func TestMakeResponseFile(t *testing.T) {
@@ -24,6 +26,29 @@ func TestMakeResponseFile(t *testing.T) {
 	}
 	if rs.Propstat[0].Prop.ResourceType.Collection != nil {
 		t.Error("file must not have collection resourcetype")
+	}
+}
+
+// TestStartStaleEntryCleared covers the liveness gate in Start: a ready
+// entry pointing at a dead process must be cleared so the profile can be
+// started again, instead of returning a dead URL forever.
+func TestStartStaleEntryCleared(t *testing.T) {
+	t.Setenv("QSSH_WEBDAV_STATE", t.TempDir()+"/webdav.json")
+	// PID 999999 almost certainly does not exist; identity fields make
+	// MatchIdentity reject it deterministically.
+	_ = stateFile().SetEntry("p", daemonstate.Entry{
+		Port: 1234, PID: 999999, StartTime: 1, Exe: "nonexistent",
+		URL: "http://127.0.0.1:1234/", Status: daemonstate.StatusReady,
+	})
+	// Start proceeds past the liveness check and fails later (the profile
+	// store isn't open in this test), which proves the stale entry did not
+	// cause an idempotent early return of the dead URL.
+	_, err := Start("p", "127.0.0.1", 0, false, "", false)
+	if err == nil {
+		t.Fatal("Start unexpectedly succeeded with no store; check test env")
+	}
+	if e, ok := stateFile().Get("p"); ok && e.PID == 999999 {
+		t.Errorf("stale entry was not cleared before restart (err=%v)", err)
 	}
 }
 
