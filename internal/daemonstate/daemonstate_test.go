@@ -3,6 +3,7 @@ package daemonstate
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -114,6 +115,11 @@ func TestWithReloadsBeforeMutating(t *testing.T) {
 }
 
 func TestFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Windows has no Unix permission bits; Chmod only toggles the
+		// read-only attribute. Access control there is the NT ACL's job.
+		t.Skip("unix mode check not applicable on windows")
+	}
 	f := Open(filepath.Join(t.TempDir(), "s.json"))
 	_ = f.SetEntry("a", Entry{Status: StatusReady})
 	fi, err := os.Stat(f.Path())

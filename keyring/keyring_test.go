@@ -3,6 +3,7 @@ package keyring
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -16,8 +17,14 @@ func isolatePATH(t *testing.T) {
 // fakeSecretTool installs a shell-script secret-tool in a temp dir and
 // returns that dir (for PATH). The fake stores secrets in dir/secret and
 // answers "lookup" with its contents.
+// Unix-only: secret-tool is a GNOME Keyring tool and the shell-script fake
+// cannot execute on Windows; on Windows the keyring backend degrades to the
+// file path (which the other tests cover), so keyring-behavior tests skip.
 func fakeSecretTool(t *testing.T) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("secret-tool keyring simulation is unix-only")
+	}
 	dir := t.TempDir()
 	script := filepath.Join(dir, "secret-tool")
 	secretFile := filepath.Join(dir, "secret")
