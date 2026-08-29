@@ -60,6 +60,15 @@ func openStore() (*store.Store, error) {
 	// is locked, Store.New will fail with a clear error (no silent re-key).
 	// Operators can: unlock keyring, or `qssh --config set store.backend file`.
 	kr := keyring.New(defaultKeyPath(), keyring.Backend(backendStr))
+	// store.mirror_key (opt-in): when true, a keyring-sourced key is also
+	// mirrored to store.key as a reboot recovery aid. Default off — the
+	// mirror bypasses the keyring's locked state, so it must be a conscious
+	// choice. A corrupt config fails closed to no-mirror.
+	if cfg.LoadError() == nil {
+		if v := strings.ToLower(strings.TrimSpace(cfg.Get("store.mirror_key"))); v == "true" || v == "1" || v == "yes" {
+			kr.SetMirrorKey(true)
+		}
+	}
 	return store.New(defaultStorePath(), kr)
 }
 

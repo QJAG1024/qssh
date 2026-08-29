@@ -215,6 +215,10 @@ func configKnownKeys() map[string]configKeyMeta {
 			desc:    "config.key.store_backend",
 			options: []string{"file", "keyring"},
 		},
+		"store.mirror_key": {
+			desc:    "config.key.store_mirror_key",
+			options: []string{"false", "true"},
+		},
 		"sftp.allow_non_loopback": {
 			desc:    "config.key.sftp_allow_non_loopback",
 			options: []string{"false", "true"},

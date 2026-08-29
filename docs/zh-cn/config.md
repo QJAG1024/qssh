@@ -7,6 +7,7 @@
 | 键 | 值 | 默认 | 说明 |
 | ---- | -------- | --------- | ------ |
 | `store.backend` | `file`, `keyring` | 自动探测 | 主密钥存储后端。`file` 使用 `~/.config/qssh/store.key`；`keyring` 使用 GNOME 密钥环（`secret-tool`）。已有 `store.key` 时优先 `file`。 |
+| `store.mirror_key` | `false`, `true` | `false` | 仅 `keyring` 后端：把从密钥环读取的密钥额外镜像到 `store.key`，作为重启后的恢复辅助。默认关闭——镜像是无需解锁密钥环即可读取的明文副本，开启会削弱密钥环的保护。 |
 | `lang` | `en-US`, `zh-CN` | `en-US` | 界面语言。 |
 | `sftp.bind` | IP 地址 | `127.0.0.1` | `--sftp-start` 的默认绑定地址。非 loopback 需要 `sftp.allow_non_loopback=true`（全局）——或者在 profile 上设置（per-profile 的选择本身就是授权，见「按 profile 覆盖」）。 |
 | `webdav.bind` | IP 地址 | `127.0.0.1` | `--webdav-start` 的默认绑定地址。非 loopback 自动启用令牌认证。可通过 `--set-option webdav.bind=...` 按 profile 覆盖。 |

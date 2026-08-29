@@ -34,6 +34,7 @@ type Keyring struct {
 	fallbackPath  string
 	backend       Backend
 	useSecretTool bool
+	mirrorKey     bool // mirror keyring-sourced key to fallback file (recovery aid)
 
 	mu          sync.Mutex
 	cachedKey   []byte // set after first successful Get; never regenerate mid-process
@@ -45,15 +46,20 @@ type Keyring struct {
 //   - BackendFile: uses a file at fallbackPath.
 func New(fallbackPath string, backend Backend) *Keyring {
 	kr := &Keyring{fallbackPath: fallbackPath, backend: backend}
-	if backend == BackendKeyring {
-		_, err := exec.LookPath("secret-tool")
-		kr.useSecretTool = err == nil
-	} else {
-		// File backend may still migrate from secret-tool if present.
-		_, err := exec.LookPath("secret-tool")
-		kr.useSecretTool = err == nil
-	}
+	_, err := exec.LookPath("secret-tool")
+	kr.useSecretTool = err == nil
 	return kr
+}
+
+// SetMirrorKey controls whether a key successfully read from the keyring is
+// also written to the fallback file as a recovery aid. Default: false.
+// The mirror defeats keyring's locked-after-reboot semantics (the file is
+// readable without unlocking the keyring), so it is opt-in via
+// store.mirror_key=true.
+func (k *Keyring) SetMirrorKey(mirror bool) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.mirrorKey = mirror
 }
 
 // SetStoreExists tells the keyring whether an encrypted store file already
@@ -116,8 +122,12 @@ func (k *Keyring) getWithKeyring() ([]byte, error) {
 
 	key, err := k.getFromSecretTool()
 	if err == nil {
-		// Mirror to store.key so a locked keyring after reboot still has a recovery path.
-		_ = k.setInFile(key)
+		// Mirror to store.key so a locked keyring after reboot still has a
+		// recovery path — opt-in only; the mirror is a plaintext copy that
+		// bypasses the keyring's locked/unlocked state.
+		if k.mirrorKey {
+			_ = k.setInFile(key)
+		}
 		return key, nil
 	}
 	// secret-tool failed (locked, empty, or missing entry).
@@ -191,8 +201,10 @@ func (k *Keyring) mintNewKey(preferKeyring bool) ([]byte, error) {
 			}
 			return key, nil
 		}
-		// Also mirror to file as recovery aid (best effort).
-		_ = k.setInFile(key)
+		// Also mirror to file as recovery aid (opt-in; best effort).
+		if k.mirrorKey {
+			_ = k.setInFile(key)
+		}
 		return key, nil
 	}
 	if err := k.setInFile(key); err != nil {

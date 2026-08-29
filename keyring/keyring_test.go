@@ -13,6 +13,98 @@ func isolatePATH(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 }
 
+// fakeSecretTool installs a shell-script secret-tool in a temp dir and
+// returns that dir (for PATH). The fake stores secrets in dir/secret and
+// answers "lookup" with its contents.
+func fakeSecretTool(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "secret-tool")
+	secretFile := filepath.Join(dir, "secret")
+	code := "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  lookup) cat " + secretFile + " 2>/dev/null; exit 0 ;;\n" +
+		"  store)  cat > " + secretFile + " ;;\n" +
+		"  *) exit 1 ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(script, []byte(code), 0755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestKeyring_KeyringBackend_NoMirrorByDefault(t *testing.T) {
+	// With a working keyring the fallback file must NOT be created unless
+	// SetMirrorKey(true): a silent mirror defeats the keyring's protection.
+	dir := fakeSecretTool(t)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	keyPath := filepath.Join(t.TempDir(), "store.key")
+	kr := New(keyPath, BackendKeyring)
+	kr.SetStoreExists(false)
+
+	// Brand-new store: mint into keyring, must not touch the fallback file.
+	if _, err := kr.Get(); err != nil {
+		t.Fatalf("mint via keyring: %v", err)
+	}
+	if _, err := os.Stat(keyPath); !os.IsNotExist(err) {
+		t.Fatal("store.key must not be mirrored by default")
+	}
+
+	// Subsequent process: keyring lookup succeeds — still no mirror.
+	kr2 := New(keyPath, BackendKeyring)
+	kr2.SetStoreExists(true)
+	if _, err := kr2.Get(); err != nil {
+		t.Fatalf("read via keyring: %v", err)
+	}
+	if _, err := os.Stat(keyPath); !os.IsNotExist(err) {
+		t.Fatal("store.key must not be mirrored after keyring read")
+	}
+}
+
+func TestKeyring_KeyringBackend_MirrorOptIn(t *testing.T) {
+	dir := fakeSecretTool(t)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	keyPath := filepath.Join(t.TempDir(), "store.key")
+	kr := New(keyPath, BackendKeyring)
+	kr.SetMirrorKey(true)
+
+	key1, err := kr.Get()
+	if err != nil {
+		t.Fatalf("mint via keyring: %v", err)
+	}
+	if _, err := os.Stat(keyPath); err != nil {
+		t.Fatal("store.key must be mirrored when SetMirrorKey(true)")
+	}
+
+	// The mirror must contain the same key.
+	kr2 := New(keyPath, BackendKeyring)
+	kr2.SetStoreExists(true)
+	key2, err := kr2.Get()
+	if err != nil {
+		t.Fatalf("read via mirror file: %v", err)
+	}
+	for i := range key1 {
+		if key1[i] != key2[i] {
+			t.Fatal("mirrored key differs from keyring key")
+		}
+	}
+}
+
+func TestKeyring_FileBackend_UnaffectedByMirror(t *testing.T) {
+	// File backend always writes the file regardless of the mirror flag.
+	isolatePATH(t)
+	keyPath := filepath.Join(t.TempDir(), "store.key")
+	kr := New(keyPath, BackendFile)
+	if _, err := kr.Get(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(keyPath); err != nil {
+		t.Fatal("file backend must persist its key")
+	}
+}
+
 func TestKeyring_FileBased(t *testing.T) {
 	isolatePATH(t)
 	dir := t.TempDir()

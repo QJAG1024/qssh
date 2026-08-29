@@ -23,7 +23,7 @@
 ### Key Packages
 
 | Package | Role |
-|---------|------|
+| --------- | ------ |
 | `cmd/` | CLI surface, daemon lifecycle, SFTP start/stop |
 | `store/` | Encrypted profile store (AES-256-GCM, atomic writes) |
 | `keyring/` | Master key: GNOME Keyring or file backend |
@@ -46,13 +46,14 @@ Clients send requests (`exec`, `mount`, `unmount`, `stop`, `ping`,
 ---
 
 <a id="file-layout"></a>
+
 ## File Layout
 
 ```text
 ~/.config/qssh/
 ├── config.json         # User config (key-value store)
 ├── store.json          # Encrypted credential profiles (AES-256-GCM)
-├── store.key           # Master key (file backend) or fallback mirror
+├── store.key           # Master key (file backend) or opt-in mirror (store.mirror_key)
 ├── known_hosts         # SSH host keys (TOFU)
 ├── hostkey.log         # Audit log of accepted host keys (TOFU)
 ├── history.jsonl       # Connection history (size-capped)
@@ -67,6 +68,7 @@ Clients send requests (`exec`, `mount`, `unmount`, `stop`, `ping`,
 ## Security Model
 
 ### At Rest
+
 - Profiles are encrypted with **AES-256-GCM**, random 12-byte nonces.
 - The 32-byte master key is stored in GNOME Keyring (preferred) or a
   `0600` file at `~/.config/qssh/store.key`.
@@ -75,19 +77,23 @@ Clients send requests (`exec`, `mount`, `unmount`, `stop`, `ping`,
 - `store.json` and `store.key` are written atomically (temp + rename + fsync).
 
 ### In Transit
+
 - Standard SSH transport with TOFU host key verification.
 - On first use, the host key fingerprint is logged to `hostkey.log` and
   printed to stderr.
 
 ### Daemon Socket
+
 - Unix domain socket with `0600` permissions.
 - On Linux, `SO_PEERCRED` rejects connections from other UIDs.
 
 ### SFTP Proxy
+
 - Binds `127.0.0.1` by default (loopback only).
 - Accepts any password (local-only proxy; not a security boundary).
 
 ### Privacy
+
 - Default-on host/IP redaction in UI output (list, progress, errors).
 - Not a security boundary — actual network traffic still uses real addresses.
 
@@ -98,7 +104,15 @@ Clients send requests (`exec`, `mount`, `unmount`, `stop`, `ping`,
 | Backend | First run | Keyring locked | Keyring unlocked |
 |---------|-----------|----------------|------------------|
 | `file` | Generates `store.key` | Uses `store.key` (no keyring needed) | Same |
-| `keyring` | Stores key in keyring | Fails with clear error + recovery instructions | Reads from keyring, mirrors to `store.key` |
+| `keyring` | Stores key in keyring | Fails with clear error + recovery instructions | Reads from keyring |
+
+By default the `keyring` backend keeps the master key **only** in the
+keyring — a plaintext `store.key` is never created, so the keyring's
+locked/unlocked state is the real protection boundary. Set
+`store.mirror_key=true` to also mirror the key to `store.key` as a reboot
+recovery aid; understand that the mirror is readable without unlocking the
+keyring (any file-read access to the user's config directory decrypts the
+store).
 
 When `store.backend=keyring` and the keyring is locked after reboot,
 qssh refuses to mint a new key and prints:
